@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gathering-demo
+  namespace: cs2207
+  labels:
+    app.kubernetes.io/name: gathering-demo
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gathering-demo
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
