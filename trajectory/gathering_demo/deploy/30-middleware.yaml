@@ -1,0 +1,12 @@
+# Redirects https://cs2207.datrollout.dev/ to the Gathering demo.
+# Referenced from 40-ingress.yaml as cs2207-root-redirect@kubernetescrd (<namespace>-<name>).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: root-redirect
+  namespace: cs2207
+spec:
+  redirectRegex:
+    regex: ^https?://cs2207\.datrollout\.dev/?$
+    replacement: https://cs2207.datrollout.dev/trajectory/gathering/
+    permanent: false
