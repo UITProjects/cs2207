@@ -22,26 +22,50 @@ streamlit run app.py
 
 Image: `ghcr.io/uitprojects/cs2207-gathering-demo` (GHCR names must be lowercase).
 
-Build (from this folder):
+The image is built for two platforms, so one tag runs everywhere:
 
-```bash
-docker build -t ghcr.io/uitprojects/cs2207-gathering-demo:1.0 -t ghcr.io/uitprojects/cs2207-gathering-demo:latest --label org.opencontainers.image.source=https://github.com/UITProjects/cs2207 .
-```
+| Platform | Runs on |
+|---|---|
+| `linux/amd64` | Linux x86, Windows (Docker Desktop), Intel Mac |
+| `linux/arm64` | Apple Silicon Mac (M1–M4), ARM Linux (Raspberry Pi 4/5, AWS Graviton) |
 
-Log in with a GitHub personal access token (classic) that has `write:packages`:
+Windows and macOS run Linux containers inside Docker Desktop's VM; Docker picks the right platform when pulling.
+Every compiled dependency (numpy, pandas, pyarrow) has prebuilt wheels for both, so no compiler is needed.
+
+Log in first with a GitHub personal access token (classic) that has `write:packages`:
 
 ```bash
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin
 ```
 
-Push:
+Create a multi-platform builder once (Docker Desktop already includes the arm64/amd64 emulation):
 
 ```bash
-docker push ghcr.io/uitprojects/cs2207-gathering-demo:1.0
+docker buildx create --name multi --driver docker-container --use
 ```
 
+On a plain Linux host, also install the emulators once:
+
 ```bash
-docker push ghcr.io/uitprojects/cs2207-gathering-demo:latest
+docker run --privileged --rm tonistiigi/binfmt --install all
+```
+
+Build both platforms and push (from this folder). A multi-platform build goes straight to the registry with `--push`:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/uitprojects/cs2207-gathering-demo:1.0 -t ghcr.io/uitprojects/cs2207-gathering-demo:latest --label org.opencontainers.image.source=https://github.com/UITProjects/cs2207 --push .
+```
+
+Check that both platforms are in the pushed image:
+
+```bash
+docker buildx imagetools inspect ghcr.io/uitprojects/cs2207-gathering-demo:latest
+```
+
+Single-platform build for a quick local test only (your machine's platform, loaded into local Docker):
+
+```bash
+docker buildx build -t cs2207-gathering-demo:dev --load .
 ```
 
 A new package on GHCR is private. To pull it without logging in, set it to public under the org's *Packages* settings.

@@ -1,4 +1,6 @@
 # Demo Gathering · buổi hòa nhạc (CS2207 · Nhóm 12), Streamlit app on port 8501.
+# Multi-platform: build with `docker buildx build --platform linux/amd64,linux/arm64` (see README).
+# The base image and every pinned wheel exist for both architectures, so nothing compiles.
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
