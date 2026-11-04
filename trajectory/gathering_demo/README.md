@@ -6,7 +6,7 @@ DBSCAN snapshot clusters → closed crowds (Algorithm 1, Hausdorff ≤ δ) → T
 
 | File | Role |
 |---|---|
-| `app.py` | Streamlit UI (steps 0–4, 3D x–y–t plot, 2D route map) |
+| `app.py` | Streamlit UI (steps 0–4, 3D x–y–t plot with timestamp / cluster / crowd filters, 2D route map) |
 | `gathering_core.py` | dataset generator (fixed seed) + pipeline, no Streamlit |
 | `check_core.py` | asserts the expected crowds and gatherings; also runs during `docker build` |
 | `.streamlit/config.toml` | theme |
