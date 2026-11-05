@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gathering-demo
+  namespace: argocd
+  labels:
+    applicationType: stateless
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  revisionHistoryLimit: 3
+  project: default
+  syncPolicy:
+    automated:
+      enabled: true
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+  destination:
+    namespace: cs2207
+    name: in-cluster
+  source:
+    repoURL: https://github.com/UITProjects/cs2207.git
+    targetRevision: main
+    path: trajectory/gathering_demo/deploy/manifest
+    directory:
+      recurse: false
