@@ -12,7 +12,8 @@ from gathering_core import DEFAULTS, STEP_MIN, T, VENUE, ZONES, run, time_label
 INK, BG, PAPER, LINE = '#172033', '#F5F2EA', '#FCFBF7', '#DDD6C6'
 RUST, BLUE, ORANGE, GRAY, MUTE, PEACH, ICE = '#B8541C', '#2D5F9A', '#E08A4F', '#6B7080', '#A3A9B6', '#F3D9C6', '#DCE6F2'
 CLUSTER_GRAY = '#7D8494'
-CROWD_COL = [RUST, BLUE, '#3E8150', '#7A4E9C', '#C8962E']
+# Cr1 đỏ tươi (khác hẳn khung khu vực màu cam), Cr2 xanh dương, Cr3 xanh ngọc: cách nhau cả về sắc lẫn độ sáng
+CROWD_COL = ['#D62839', '#1F6FD0', '#0F9D8A', '#8A3FC0', '#C8962E']
 NOZOOM = {'scrollZoom': False, 'displaylogo': False}
 
 SUB = str.maketrans('0123456789', '₀₁₂₃₄₅₆₇₈₉')
@@ -91,21 +92,35 @@ def circle(c, pad=1.6):
     return cx, cy, r
 
 
-def fig3d(mode, focus=None):
-    """mode: raw | clusters | crowds | participators (focus = index of a crowd)."""
+def fig3d(mode, focus=None, view=None):
+    """mode: raw | clusters | crowds | participators (focus = index of a crowd).
+    view: bộ lọc từ view_controls(): ts = các mốc hiện (list), cl = cụm được chọn (set id, rỗng = tất cả),
+    crowd = chỉ crowd này (index, stage 2), lines = nối quỹ đạo, noise = hiện mờ điểm nhiễu (không thuộc cụm nào)."""
+    view = view or dict(ts=list(range(T)), cl=set(), crowd=None, lines=True, noise=False)
+    ts_vis, sel_cl, lines = view['ts'], view['cl'], view['lines']
+    t_lo, t_hi, n_vis = ts_vis[0], ts_vis[-1], len(ts_vis)
     W, H = VENUE
     fig = go.Figure()
-    for t in range(T):
+
+    def cluster_shown(c):
+        if c['t'] not in ts_vis:
+            return False
+        if sel_cl and c['id'] not in sel_cl:
+            return False
+        return view['crowd'] is None or c['id'] in R['crowds'][view['crowd']]
+
+    shown_cl = [c for c in R['clusters'] if mode != 'raw' and cluster_shown(c)]
+    for t in ts_vis:
         z = t + 1
         fig.add_trace(go.Mesh3d(x=[0, W, W, 0], y=[0, 0, H, H], z=[z] * 4, i=[0, 0], j=[1, 2], k=[2, 3],
                                 color='#CFC6B2', opacity=.16, hoverinfo='skip', showscale=False))
         fig.add_trace(go.Scatter3d(x=[0, W, W, 0, 0], y=[0, 0, H, H, 0], z=[z] * 5, mode='lines',
                                    line=dict(color='#9C9483', width=2), hoverinfo='skip', showlegend=False))
-    # khu vực trên mặt phẳng t₁
+    # khu vực trên mặt phẳng thấp nhất đang hiện
     for name, (x0, y0, x1, y1) in ZONES.items():
-        fig.add_trace(go.Scatter3d(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], z=[1] * 5, mode='lines',
+        fig.add_trace(go.Scatter3d(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], z=[t_lo + 1] * 5, mode='lines',
                                    line=dict(color=ORANGE, width=3), hoverinfo='skip', showlegend=False))
-        fig.add_trace(go.Scatter3d(x=[(x0 + x1) / 2], y=[y1 + 2.5], z=[1], mode='text', text=[name],
+        fig.add_trace(go.Scatter3d(x=[(x0 + x1) / 2], y=[y1 + 2.5], z=[t_lo + 1], mode='text', text=[name],
                                    textfont=dict(color='#8A3F14', size=12), hoverinfo='skip', showlegend=False))
 
     par, members = set(), set()
@@ -115,7 +130,7 @@ def fig3d(mode, focus=None):
 
     # cụm (hình elip xám như Fig. 1c)
     if mode != 'raw':
-        for c in R['clusters']:
+        for c in shown_cl:
             k = crowd_of.get(c['id'])
             col = CLUSTER_GRAY
             if mode in ('crowds', 'participators') and k is not None:
@@ -138,6 +153,8 @@ def fig3d(mode, focus=None):
             if not l['close']:
                 continue
             a, b = CL[l['a']], CL[l['b']]
+            if not (cluster_shown(a) and cluster_shown(b)):
+                continue
             k = crowd_of.get(l['a'])
             col = CROWD_COL[k % len(CROWD_COL)] if k is not None and crowd_of.get(l['b']) == k else CLUSTER_GRAY
             fig.add_trace(go.Scatter3d(x=[a['centroid'][0], b['centroid'][0]], y=[a['centroid'][1], b['centroid'][1]],
@@ -145,31 +162,95 @@ def fig3d(mode, focus=None):
                                        hovertext=f"d_H({cN(l['a'])}, {cN(l['b'])}) = {l['dH']:.1f} m ≤ δ", hoverinfo='text',
                                        showlegend=False))
     # quỹ đạo từng người
+    # bước 1–2: chỉ vẽ điểm (người, mốc) nằm trong các cụm đang hiện; điểm nhiễu chỉ hiện mờ khi bật công tắc
+    cluster_mode = mode in ('clusters', 'crowds')
+    shown_pts = {(o, c['t']) for c in shown_cl for o in c['members']} if cluster_mode else None
     for o in OBJS:
-        ts = [t for t in range(T) if (o, t) in POS]
-        xs, ys = [POS[o, t][0] for t in ts], [POS[o, t][1] for t in ts]
+        ts = [t for t in ts_vis if (o, t) in POS]
+        if shown_pts is not None:
+            ts = [t for t in ts if (o, t) in shown_pts]
+        if not ts:
+            continue
         line_col, dot, width = ('#8E94A3', '#5A6070', 2) if mode == 'raw' else ('#A9AEB8', '#7A808C', 2)
         if mode == 'participators':
             if o in par:
                 line_col, dot, width = ORANGE, ORANGE, 6
             else:
                 line_col, dot, width = ('#8E94A3', '#8E94A3', 3) if o in members else ('#CFCAC0', '#B9B4AA', 2)
+        xs, ys, zs, hv = [], [], [], []
+        for j, t in enumerate(ts):
+            if j and t != ts[j - 1] + 1:   # mốc không liền nhau: ngắt đường, không nối xuyên qua mốc bị lọc
+                xs.append(None); ys.append(None); zs.append(None); hv.append(None)
+            xs.append(POS[o, t][0]); ys.append(POS[o, t][1]); zs.append(t + 1)
+            hv.append(f"{oN(o)} · {tN(t)} {time_label(t)} · ({POS[o, t][0]:.1f}, {POS[o, t][1]:.1f})")
         fig.add_trace(go.Scatter3d(
-            x=xs, y=ys, z=[t + 1 for t in ts], mode='lines+markers',
+            x=xs, y=ys, z=zs, mode='lines+markers' if lines else 'markers',
             line=dict(color=line_col, width=width), marker=dict(size=2.8, color=dot),
-            hovertext=[f"{oN(o)} · {tN(t)} {time_label(t)} · ({POS[o, t][0]:.1f}, {POS[o, t][1]:.1f})" for t in ts],
+            hovertext=hv, hoverinfo='text', showlegend=False))
+    if cluster_mode and view['noise']:
+        clustered = {(o, c['t']) for c in R['clusters'] for o in c['members']}
+        nz = [(o, t) for (o, t) in POS if t in ts_vis and (o, t) not in clustered]
+        fig.add_trace(go.Scatter3d(
+            x=[POS[k][0] for k in nz], y=[POS[k][1] for k in nz], z=[t + 1 for _, t in nz], mode='markers',
+            marker=dict(size=2, color='#CFCAC0'), hovertext=[f"{oN(o)} · {tN(t)} · nhiễu" for o, t in nz],
             hoverinfo='text', showlegend=False))
+    # ít mốc ⇒ trục t ngắn lại và nhìn từ trên xuống nhiều hơn, để thấy rõ vị trí trên mặt phẳng
+    zr = max(0.4, 1.55 * n_vis / T)
+    eye = (dict(x=0.35, y=-1.7, z=2.3) if n_vis == 1 else
+           dict(x=0.6, y=-2.4, z=1.7) if n_vis <= 3 else dict(x=0.75, y=-3.0, z=1.25))
+    rev = f'keep-{min(n_vis, 4)}'   # đổi kiểu xem thì đặt lại camera, cùng kiểu thì giữ góc người dùng xoay
     fig.update_layout(
-        height=720, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', uirevision='keep',
+        height=int(460 + 260 * n_vis / T), margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', uirevision=rev,
         scene=dict(
             xaxis=dict(title='x (m)', range=[-4, W + 4], backgroundcolor=BG, gridcolor=LINE),
             yaxis=dict(title='y (m)', range=[-4, H + 4], backgroundcolor=BG, gridcolor=LINE),
-            zaxis=dict(title='t', tickvals=list(range(1, T + 1)), ticktext=[f'{tN(t)} {time_label(t)}' for t in range(T)],
-                       range=[0.7, T + 0.4], backgroundcolor=BG, gridcolor=LINE),
-            aspectmode='manual', aspectratio=dict(x=1.3, y=1.04, z=1.55),
-            camera=dict(eye=dict(x=0.75, y=-3.0, z=1.25), center=dict(x=0, y=0, z=-0.08)),
-            uirevision='keep'))
+            zaxis=dict(title='t', tickvals=[t + 1 for t in ts_vis], ticktext=[f'{tN(t)} {time_label(t)}' for t in ts_vis],
+                       range=[t_lo + 0.7, t_hi + 1.4], backgroundcolor=BG, gridcolor=LINE),
+            aspectmode='manual', aspectratio=dict(x=1.3, y=1.04, z=zr),
+            camera=dict(eye=eye, center=dict(x=0, y=0, z=-0.08)),
+            uirevision=rev))
     return fig
+
+
+def view_controls(mode):
+    """Bộ lọc cho hình 3D (một hàng phía trên hình): mốc thời gian, cụm / crowd, quỹ đạo. Trả về dict `view` cho fig3d."""
+    sig = '_'.join(str(P[k]) for k in KEYS)            # đổi tham số ⇒ id cụm đổi ⇒ lọc cũ không còn hợp lệ
+    labels = [f'{tN(t)} {time_label(t)}' for t in range(T)]
+    with st.container(border=True):
+        c1, c2, c3, c4 = st.columns([1.7, 1.6, 1.7, 1.3], vertical_alignment='bottom')
+        with c1:
+            m = st.segmented_control('Mốc thời gian', ['Tất cả', 'Một mốc', 'Khoảng'], default='Tất cả', key='v_mode') or 'Tất cả'
+        with c2:
+            if m == 'Một mốc':
+                a = st.select_slider('Chọn mốc', labels, value=labels[0], key='v_one')
+                lo = hi = labels.index(a)
+            elif m == 'Khoảng':
+                a, b = st.select_slider('Khoảng mốc', labels, value=(labels[0], labels[-1]), key='v_rng')
+                lo, hi = labels.index(a), labels.index(b)
+            else:
+                lo, hi = 0, T - 1
+                st.caption(f'Hiện cả {T} mốc {tN(0)} … {tN(T - 1)}')
+        view = dict(ts=list(range(lo, hi + 1)), cl=set(), crowd=None, lines=True, noise=False)
+        with c3:
+            if mode == 'clusters':
+                opts = {cN(c['id']): c['id'] for c in R['clusters'] if lo <= c['t'] <= hi}
+                pick = st.multiselect('Chỉ hiện cụm', list(opts), key=f'v_cl_{sig}_{lo}_{hi}', placeholder='Tất cả cụm')
+                view['cl'] = {opts[n] for n in pick}
+            elif mode == 'crowds' and R['crowds']:
+                names = ['Tất cả crowd'] + [f'Cr{sub(k + 1)}' for k in range(len(R['crowds']))]
+                pick = st.selectbox('Crowd', names, key=f'v_cr_{sig}')
+                view['crowd'] = None if pick == names[0] else names.index(pick) - 1
+        with c4:
+            view['lines'] = st.toggle('Nối quỹ đạo', value=True, key='v_lines',
+                                      help='Tắt để chỉ còn các điểm, ít rối hơn khi trình bày.')
+            if mode in ('clusters', 'crowds'):
+                view['noise'] = st.toggle('Hiện mờ nhiễu', value=False, key='v_noise',
+                                          help='Nhiễu = điểm không thuộc cụm nào ở mốc đó (DBSCAN loại ra). Bật để thấy chúng dạng chấm mờ.')
+        if view['crowd'] is not None:
+            cr = R['crowds'][view['crowd']]
+            st.caption(f"Cr{sub(view['crowd'] + 1)}: {tN(CL[cr[0]]['t'])} → {tN(CL[cr[-1]]['t'])}"
+                       + ('' if any(CL[i]['t'] in view['ts'] for i in cr) else ' · ngoài khoảng mốc đang xem'))
+    return view
 
 
 # ----- bản đồ 2D: hướng di chuyển của các crowd -----
@@ -217,14 +298,13 @@ def fig2d():
     fig.add_trace(go.Scatter(x=[r[2] for r in R['rows']], y=[r[3] for r in R['rows']], mode='markers',
                              marker=dict(size=4, color='#CFCAC0'), hoverinfo='skip', showlegend=False))
     for k, cr in enumerate(R['crowds']):
-        col = CROWD_COL[k % len(CROWD_COL)]
-        cols = [col if i in in_gath else GRAY for i in cr]   # cụm bị TAD cắt / crowd không phải gathering: xám
-        for i, c in zip(cr, cols):
+        col = CROWD_COL[k % len(CROWD_COL)]   # màu = crowd; đặc/liền = thuộc gathering, rỗng/nét đứt = chỉ là crowd
+        for i in cr:
             cx, cy, r = circle(CL[i], pad=1.0)
             ok = i in in_gath
             fig.add_shape(type='circle', x0=cx - r, y0=cy - r, x1=cx + r, y1=cy + r,
-                          line=dict(color=c, width=1.5 if ok else 1, dash='solid' if ok else 'dot'),
-                          fillcolor=c if ok else 'rgba(0,0,0,0)', opacity=.25 if ok else .8)
+                          line=dict(color=col, width=2 if ok else 1.5, dash='solid' if ok else 'dot'),
+                          fillcolor=col if ok else 'rgba(0,0,0,0)', opacity=.28 if ok else .95)
         xs = [CL[i]['centroid'][0] for i in cr]
         ys = [CL[i]['centroid'][1] for i in cr]
         # đoạn đứng yên (tâm cách nhau < 3 m) chỉ có một nhãn ở cụm cuối: c₅¹ … c₁₀¹
@@ -233,22 +313,37 @@ def fig2d():
             if j == len(cr) or math.dist(CL[cr[j]]['centroid'], CL[cr[start]]['centroid']) >= 3:
                 labels[j - 1] = cN(cr[start]) if j - 1 == start else f'{cN(cr[start])} … {cN(cr[j - 1])}'
                 start = j
-        pos = ['top center'] * len(cr)
+        # Cr1 nhãn phía trên, crowd khác phía dưới: chỗ hai crowd đi qua cùng một điểm không đè chữ lên nhau
+        pos = ['top center' if k == 0 else 'bottom center'] * len(cr)
         if direction(cr)[1] < 5:
             labels[-1], pos[-1] = f'  Cr{sub(k + 1)} · {labels[-1]} · đứng yên', 'middle right'
+        dashed_x, dashed_y = [], []
         for j in range(len(cr) - 1):
             if math.dist(CL[cr[j]]['centroid'], CL[cr[j + 1]]['centroid']) < 2:
                 continue
             both = cr[j] in in_gath and cr[j + 1] in in_gath
-            fig.add_annotation(x=xs[j + 1], y=ys[j + 1], ax=xs[j], ay=ys[j], xref='x', yref='y', axref='x', ayref='y',
-                               showarrow=True, arrowhead=3, arrowsize=1.2, arrowwidth=3 if both else 1.5,
-                               arrowcolor=col if both else GRAY, text='', standoff=4, startstandoff=4)
+            if both:   # liền, dày: đoạn thuộc gathering
+                fig.add_annotation(x=xs[j + 1], y=ys[j + 1], ax=xs[j], ay=ys[j], xref='x', yref='y', axref='x', ayref='y',
+                                   showarrow=True, arrowhead=3, arrowsize=1.2, arrowwidth=3, arrowcolor=col,
+                                   text='', standoff=4, startstandoff=4)
+            else:      # nét đứt mảnh + mũi tên ngắn ở đầu: đoạn chỉ là crowd
+                d = math.dist((xs[j], ys[j]), (xs[j + 1], ys[j + 1]))
+                f = min(1.0, 4.0 / d)
+                dashed_x += [xs[j], xs[j + 1], None]
+                dashed_y += [ys[j], ys[j + 1], None]
+                fig.add_annotation(x=xs[j + 1], y=ys[j + 1], ax=xs[j + 1] - f * (xs[j + 1] - xs[j]),
+                                   ay=ys[j + 1] - f * (ys[j + 1] - ys[j]), xref='x', yref='y', axref='x', ayref='y',
+                                   showarrow=True, arrowhead=3, arrowsize=1.2, arrowwidth=1.8, arrowcolor=col,
+                                   text='', standoff=4, startstandoff=0)
+        if dashed_x:
+            fig.add_trace(go.Scatter(x=dashed_x, y=dashed_y, mode='lines', line=dict(color=col, width=1.8, dash='dash'),
+                                     hoverinfo='skip', showlegend=False))
         kind = ('Gathering' if R['tads'][k]['gatherings'] == [cr] else
                 'Gathering ' + ', '.join(seq(g) for g in R['tads'][k]['gatherings']) if is_gath[k] else 'chỉ là crowd')
         fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode='markers+text', marker=dict(size=9, color=cols, line=dict(color='#fff', width=1.5)),
-            text=labels, textposition=pos,
-            textfont=dict(size=12, color=col if is_gath[k] else GRAY),
+            x=xs, y=ys, mode='markers+text',
+            marker=dict(size=10, color=[col if i in in_gath else '#fff' for i in cr], line=dict(color=col, width=2)),
+            text=labels, textposition=pos, textfont=dict(size=12, color=col),
             hovertext=[f'{cN(i)} · {time_label(CL[i]["t"])} · {oset(CL[i]["members"])}' for i in cr],
             hoverinfo='text', name=f"Cr{sub(k + 1)} · {kind}"))
     fig.update_layout(height=600, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor=BG,
@@ -323,9 +418,10 @@ if s == 0:
                 f'<b>{n_people} người</b>, vị trí (x, y) ghi mỗi {STEP_MIN} phút, {T} mốc {tN(0)} … {tN(T - 1)}. '
                 '<br><b>Câu hỏi:</b> làm sao khai phá dữ liệu này để ra các <b>Crowd = ⟨c₁ᵏ, c₂ᵏ, c₃ᵏ, …⟩</b>, '
                 'và crowd nào thật sự là một <b>Gathering</b>?</div>', unsafe_allow_html=True)
+    view = view_controls('raw')
     left, right = st.columns([1.5, 1])
     with left:
-        st.plotly_chart(fig3d('raw'), width='stretch', key='g3d', config=NOZOOM)
+        st.plotly_chart(fig3d('raw', view=view), width='stretch', key='g3d', config=NOZOOM)
     with right:
         df = pd.DataFrame([(o, tN(t), time_label(t), x, y) for o, t, x, y in R['rows']],
                           columns=['Người', 'Mốc', 'Giờ', 'x (m)', 'y (m)'])
@@ -339,9 +435,10 @@ elif s == 1:
                 '<br><b>Ký hiệu c<sub>t</sub><sup>k</sup></b>: cluster thứ k tại mốc t. Chỉ số dưới là mốc, như '
                 'c<sub>t<sub>i</sub></sub> trong Definition 2; chỉ số trên phân biệt các cluster cùng một mốc '
                 '(ví dụ c₁¹, c₁² đều ở t₁).</div>', unsafe_allow_html=True)
+    view = view_controls('clusters')
     left, right = st.columns([1.5, 1])
     with left:
-        st.plotly_chart(fig3d('clusters'), width='stretch', key='g3d', config=NOZOOM)
+        st.plotly_chart(fig3d('clusters', view=view), width='stretch', key='g3d', config=NOZOOM)
     with right:
         rows = [{'Cụm': cN(c['id']), 'Mốc': tN(c['t']), 'Số người': f"{len(c['members'])} {'✓' if len(c['members']) >= P['m_c'] else '✗'}",
                  'Thành viên': oset(c['members'])} for c in R['clusters']]
@@ -356,9 +453,10 @@ elif s == 2:
                 f'd<sub>H</sub> ≤ δ = {P["delta"]:g} m (vị trí và hình dạng gần giống). Chuỗi dài ≥ k<sub>c</sub> = {P["k_c"]} '
                 f'mốc, cụm nào cũng ≥ m<sub>c</sub> = {P["m_c"]} người ⇒ <b>Crowd</b> (Definition 2, Algorithm 1 tìm '
                 'closed crowd).</div>', unsafe_allow_html=True)
+    view = view_controls('crowds')
     left, right = st.columns([1.5, 1])
     with left:
-        st.plotly_chart(fig3d('crowds'), width='stretch', key='g3d', config=NOZOOM)
+        st.plotly_chart(fig3d('crowds', view=view), width='stretch', key='g3d', config=NOZOOM)
     with right:
         st.markdown('**Crowd tìm được**')
         if not R['crowds']:
@@ -414,12 +512,15 @@ else:
     if rows:
         df = pd.DataFrame(rows)
         # st.table wraps long cells (the full route), st.dataframe would cut them
-        st.table(df.style.apply(lambda r: [f'background-color: {ICE}; font-weight: bold' if r['Gathering'].startswith('✓')
-                                           else f'color: {GRAY}'] * len(r), axis=1).hide(axis='index'))
+        def row_style(r):
+            base = (f'background-color: {ICE}; font-weight: bold' if r['Gathering'].startswith('✓') else f'color: {GRAY}')
+            return [f'{base}; color: {CROWD_COL[r.name % len(CROWD_COL)]}; font-weight: bold'
+                    if c == 'Crowd' else base for c in r.index]
+        st.table(df.style.apply(row_style, axis=1).hide(axis='index'))
     else:
         st.warning('Không có crowd nào với tham số hiện tại.')
     st.plotly_chart(fig2d(), width='stretch', key='g2d', config=NOZOOM)
-    st.caption('Hình tròn đặc + mũi tên màu = cụm thuộc gathering; hình tròn nét đứt xám = cụm của crowd nhưng không thuộc gathering.')
+    st.caption('Mỗi crowd một màu. Hình tròn đặc + mũi tên liền dày = cụm thuộc gathering; vòng rỗng nét chấm + mũi tên nét đứt = cụm của crowd nhưng không thuộc gathering.')
     lines = []
     for k, (cr, td) in enumerate(zip(R['crowds'], R['tads'])):
         name = f'<b>Cr{sub(k + 1)}</b> ({route(cr)})'
