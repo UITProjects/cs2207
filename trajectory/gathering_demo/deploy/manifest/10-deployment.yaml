@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: ghcr.io/uitprojects/cs2207-gathering-demo:1.0
+          image: ghcr.io/uitprojects/cs2207-gathering-demo:sha-d9d87b1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
