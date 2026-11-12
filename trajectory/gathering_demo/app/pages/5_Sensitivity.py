@@ -1,13 +1,17 @@
 """⚙️ Sensitivity — quét một tham số, xem số crowd / gathering / participator thay đổi."""
 from __future__ import annotations
 
-import common
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
-from common import q
-from plotly.subplots import make_subplots
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # app/ (for `common`)
+import common  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import plotly.graph_objects as go  # noqa: E402
+import streamlit as st  # noqa: E402
+from common import q  # noqa: E402
+from plotly.subplots import make_subplots  # noqa: E402
 
 common.page("Sensitivity", "⚙️")
 ctx = common.sidebar()

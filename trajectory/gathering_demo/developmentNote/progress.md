@@ -51,3 +51,18 @@
 - Verified: `docker build` OK (14 tests pass, `pipeline ok mock-2207-0000 8 crowds 8 gatherings`, image 896 MB). The container with `STREAMLIT_SERVER_BASE_URL_PATH=trajectory/gathering` answers `/trajectory/gathering/_stcore/health` → ok, `/trajectory/gathering/` → 200. Playwright + system Chrome screenshots of Insights / Step-by-step / Coach View show 0 exceptions, and the maps and charts render.
 - **Demo is fully presentable on mock data.**
 - Note: commits from M5 on are **unsigned** (`-c commit.gpgsign=false`): gpg pinentry cannot prompt while you are away. Re-sign with `git rebase --exec 'git commit --amend --no-edit -S' 5ae53e6~1` if needed.
+
+## M7 — Real data source, no key (done 00:30)
+- `src/api/client.py`: auth/gzip headers; a token bucket (10/min) only on limited endpoints (/samples, /players, …) while /matches and telemetry are unlimited; 429 → wait until `X-RateLimit-Reset` (max 120 s); ConnectionError/reset/timeout → `NetworkBlockedError` with the WARP hint after 3 retries (backoff 1/2/4 s); timeouts connect 10 s / read 60 s; key comes from env, then `.env`, and is never printed (`repr` shows set/missing). The telemetry CDN is called without the key, and the body handles both gzip encodings.
+- `src/datasource/pubg_api.py` (`/samples` with `--days` → `filter[createdAt-start]`, `/matches/{id}`, telemetry asset URL), `src/api/errors.py`.
+- `scripts/check_connectivity.py` (single attempt each; status → samples → match → telemetry when a key is set, otherwise a CDN host probe). **Run tonight without WARP: api.pubg.com/status 200, telemetry-cdn reachable (403 on the root) → PUBG reachable on this network right now.**
+- `.github/workflows/pubg-crawl.yml` (cron `17 20 * * *` + dispatch, uv + Python 3.11, crawl → parse → clean, uploads `data/processed/pubg/` as an artifact kept 90 days, fails clearly if the secret is missing; working-directory trajectory/gathering_demo; contents: read only). `scripts/pull_cloud_data.py` (`gh run download` → `data/processed/pubg/`).
+- `tests/test_client.py` (responses): success flow (headers, no key sent to the CDN, gz body), 429 + reset header, connection reset → NetworkBlockedError after 4 calls, timeout, missing telemetry asset, 401 / no key, key not in repr, token bucket rate, unlimited endpoints not throttled. All 9 pass with no key.
+- Fix: the repo-root `.gitignore` rule `[Ss]cripts` was silently ignoring `scripts/`. Re-included with `!scripts/` in the project `.gitignore`.
+- Full suite: `uv run ruff check . && uv run pytest` → 30 passed. `validate_mock.py` → recall 0.97.
+
+### STOP — waiting for the PUBG API key (M8)
+1. (Probably optional tonight: check_connectivity passed without WARP) turn on Cloudflare WARP if `scripts/check_connectivity.py` fails.
+2. Put `PUBG_API_KEY=...` in `trajectory/gathering_demo/.env`.
+3. Optional: add the repository secret `PUBG_API_KEY` and run Actions → pubg-crawl → Run workflow.
+4. Say "key is ready" → M8: inspect a real telemetry file, resolve the UNVERIFIED items in docs/schema.md, add real fixtures, crawl ~50 matches, build data/sample/real.

@@ -8,3 +8,6 @@ assets/maps/*_full.*
 .ruff_cache/
 __pycache__/
 data/interim/
+
+# the repo-root .gitignore ignores [Ss]cripts (venv template); our scripts/ folder is source code
+!scripts/

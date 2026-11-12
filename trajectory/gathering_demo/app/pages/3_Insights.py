@@ -1,15 +1,19 @@
 """🗺️ Multi-match Insights — điểm nóng theo phase, chokepoint, gathering ↔ bị loại."""
 from __future__ import annotations
 
-import common
-import numpy as np
-import plotly.graph_objects as go
-import streamlit as st
-from common import q, verdict
+import sys
+from pathlib import Path
 
-from src.analytics.hotspots import grid_counts, top_places
-from src.analytics.outcomes import rate_table
-from src.viz.map_plot import base_map
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # app/ (for `common`)
+import common  # noqa: E402
+import numpy as np  # noqa: E402
+import plotly.graph_objects as go  # noqa: E402
+import streamlit as st  # noqa: E402
+from common import q, verdict  # noqa: E402
+
+from src.analytics.hotspots import grid_counts, top_places  # noqa: E402
+from src.analytics.outcomes import rate_table  # noqa: E402
+from src.viz.map_plot import base_map  # noqa: E402
 
 common.page("Insights", "🗺️")
 ctx = common.sidebar(match_picker=False)

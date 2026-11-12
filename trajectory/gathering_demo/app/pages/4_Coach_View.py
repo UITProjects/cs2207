@@ -1,13 +1,17 @@
 """🎯 Coach View — rủi ro tuyến/điểm theo phase và báo cáo VOD cho một đội."""
 from __future__ import annotations
 
-import common
-import numpy as np
-import streamlit as st
-from common import q, verdict
+import sys
+from pathlib import Path
 
-from src.analytics.aggregate import mine_one
-from src.analytics.team_report import team_report
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # app/ (for `common`)
+import common  # noqa: E402
+import numpy as np  # noqa: E402
+import streamlit as st  # noqa: E402
+from common import q, verdict  # noqa: E402
+
+from src.analytics.aggregate import mine_one  # noqa: E402
+from src.analytics.team_report import team_report  # noqa: E402
 
 common.page("Coach View", "🎯")
 ctx = common.sidebar()

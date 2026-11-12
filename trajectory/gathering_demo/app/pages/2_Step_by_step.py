@@ -1,14 +1,18 @@
 """🔬 Step-by-step — quỹ đạo → cụm → crowd → gathering trên một trận (luồng của demo cũ)."""
 from __future__ import annotations
 
-import common
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-import streamlit as st
-from common import q, verdict
+import sys
+from pathlib import Path
 
-from src.viz.map_plot import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # app/ (for `common`)
+import common  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import plotly.graph_objects as go  # noqa: E402
+import streamlit as st  # noqa: E402
+from common import q, verdict  # noqa: E402
+
+from src.viz.map_plot import (  # noqa: E402
     CLUSTER_COLORS,
     NOISE,
     animation,
