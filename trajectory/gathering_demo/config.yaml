@@ -1,0 +1,40 @@
+# Data source: mock | pubg (env DATASOURCE overrides)
+datasource: mock
+
+api:
+  shard: steam
+  base_url: https://api.pubg.com
+  limited_rpm: 10          # /samples, /players ... ; /matches + telemetry are not limited
+
+filters:
+  mapName: [Baltic_Main]
+  gameMode: [squad, squad-fpp]
+  matchType: [competitive, official]
+
+mock:
+  seed: 2207
+  n_players: 100
+  squad_size: 4
+  sample_interval_s: 10
+
+preprocess:
+  dt: 10                   # resample grid (s)
+  max_gap_s: 30            # interpolate gaps up to this only
+  max_speed_foot: 60       # m/s outlier filter when not in a vehicle
+
+# Default mining parameters (meters, steps of dt)
+params:
+  eps: 150
+  min_pts: 3
+  m_c: 8
+  delta: 300
+  k_c: 6
+  k_p: 4
+  m_p: 6
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  sample: data/sample
+  map_image: assets/maps/erangel.jpg
+  places: assets/erangel_places.yaml
