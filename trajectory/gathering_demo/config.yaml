@@ -34,6 +34,7 @@ params:
 
 paths:
   raw: data/raw
+  interim: data/interim
   processed: data/processed
   sample: data/sample
   map_image: assets/maps/erangel.jpg
