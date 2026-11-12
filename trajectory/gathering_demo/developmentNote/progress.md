@@ -29,3 +29,10 @@
 - Simulator fix (not the metric): bridge camps had too few people left (kill weight too strong, GT used ≥ 6 people < m_c). Now 3–4 fullest squads within 3.5 km, kill weight 1 + 0.12·enemies(≤8), GT ≥ 8 people everywhere.
 - `scripts/stats.py` prints §8 stats.
 - Open: on mock data almost every crowd is also a gathering at default params (squads stay together). The crowd ≠ gathering difference shows when you raise k_p / m_p. Hot-drop recall 0.75 is the weakest part: brawls lose people quickly.
+
+## M4 — Core app (done 00:05, 13/11)
+- `app/common.py` (CSS from legacy q/verdict boxes, sidebar: source picker + MOCK/REAL badge, match picker, §3 sliders with k_p ≤ k_c / m_p ≤ m_c clamps, reset button; cached loaders keyed by folder/match/params), `src/viz/map_plot.py` (map as layout image in meters, reversed y, square; zone circles per frame; convex hulls; ≤300-frame animation; zoom boxes), `src/analytics/gazetteer.py`.
+- Pages: `app/Home.py` (pain point, 4 definitions + illustration, graphviz pipeline, provenance, limitations), `1_Data_Explorer.py`, `2_Step_by_step.py` (4 tabs: animation + zones; DBSCAN snapshot with hulls/sizes; crowd list + hull sequence + centroid path + d_H vs δ + size vs m_c; TAD trace, participators per cluster vs m_p, gathering forming→dissolving animation with participators outlined).
+- `assets/maps/erangel_1024.jpg` (208 KB) is embedded in the figures, so pages stay light.
+- Map alignment checked by rendering through kaleido (dev dep), and trajectories sit on land/bridges.
+- `tests/test_app.py` AppTest: every page + param change + reset → pass.

@@ -108,7 +108,11 @@ def clean_match(tables: dict, dt: float = 10, max_gap: float = 30, vmax: float =
     out.insert(0, "match_id", mid)
     kills = tables["kills"].copy()
     kills["phase"] = phase_at(zones, kills["t"].to_numpy())
-    meta = dict(tables["meta"], dt=dt, n_points=len(out), t_max=int(out["t"].max()) if len(out) else 0,
+    raw_dt = pos.sort_values(["player", "t"]).groupby("player")["t"].diff().dropna()
+    meta = dict(tables["meta"], dt=dt, n_points=len(out), n_raw_points=len(pos),
+                raw_dt_median=round(float(raw_dt.median()), 3) if len(raw_dt) else None,
+                raw_dt_p10=round(float(raw_dt.quantile(0.1)), 3) if len(raw_dt) else None,
+                raw_dt_p90=round(float(raw_dt.quantile(0.9)), 3) if len(raw_dt) else None, t_max=int(out["t"].max()) if len(out) else 0,
                 n_phases=int(zones["phase"].max()) if len(zones) else 0)
     return dict(positions=out, zones=zones, kills=kills, results=tables["results"], landings=tables["landings"],
                 meta=meta)
