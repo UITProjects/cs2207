@@ -9,7 +9,7 @@ the gatherings it scripts on purpose, used only by `scripts/validate_mock.py`:
 * final-circle crowding: the last zones are small, so the survivors are packed together.
 
 Squads are simulated at the squad level (centre + per-member AR(1) offsets) on a 10 s grid, which
-keeps it vectorised and fast (< 0.5 s per match). Eliminations follow a target "alive" curve, and
+keeps it vectorised and fast (< 1 s per match). Eliminations follow a target "alive" curve, and
 the victims are drawn with weight growing with the number of enemies nearby, so density and
 elimination risk are linked (visible but noisy signal).
 """
@@ -213,7 +213,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
         br = bridges[int(rng.integers(len(bridges)))]
         side = int(rng.integers(2))
         cpt = (br["x1"], br["y1"]) if side == 0 else (br["x2"], br["y2"])
-        camp = dict(t0=float(rng.uniform(460, 620)), bridge=br, point=cpt, k=int(rng.integers(2, 4)),
+        camp = dict(t0=float(rng.uniform(420, 560)), bridge=br, point=cpt, k=int(rng.integers(3, 5)),
                     hold=float(rng.uniform(170, 260)))
 
     # ---- simulation on the sample grid ----
@@ -252,8 +252,9 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
         safe, warn, phase = zone_at(t)
         # bridge camp: pick the squads nearest to the bridge end
         if camp and not camp_squads and t >= camp["t0"]:
-            cands = [s for s in squads if alive[s.members].sum() >= 3 and t > s.land_t]
-            cands.sort(key=lambda s: math.dist(s.pos, camp["point"]))
+            cands = [s for s in squads if alive[s.members].sum() >= 3 and t > s.land_t
+                     and math.dist(s.pos, camp["point"]) < 3500]
+            cands.sort(key=lambda s: (-int(alive[s.members].sum()), math.dist(s.pos, camp["point"])))
             camp_squads = [s.team_id for s in cands[: camp["k"]]]
             for s in cands[: camp["k"]]:
                 s.speed = CAR
@@ -347,7 +348,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
             near = ((D < 200) & enemy).sum(1)
             if winner_team is None and len(set(team_of[cand])) <= 2 and t > 1450:
                 winner_team = int(rng.choice(sorted(set(team_of[cand]))))
-            w = 1.0 + 0.3 * np.minimum(near, 8).astype(float)
+            w = 1.0 + 0.12 * np.minimum(near, 8).astype(float)
             if winner_team is not None:
                 w[team_of[cand] == winner_team] = 0
             if w.sum() == 0:
@@ -412,7 +413,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
                                members=[accounts[i] for i in g["_members"]]))
     if camp_squads:
         mem = [m for tid in camp_squads for m in squads[tid - 1].members]
-        sp = span(mem, camp["point"], 250, t_lo=camp["t0"], min_present=6)
+        sp = span(mem, camp["point"], 250, t_lo=camp["t0"], min_present=8)
         if sp:
             out_gt.append(dict(kind="bridge_camp", place=camp["bridge"]["name"], center=list(camp["point"]),
                                radius=250, squads=camp_squads, t_start=float(times[sp[0]]),

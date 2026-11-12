@@ -21,3 +21,11 @@
 - `tests/test_parse.py`: contract test parametrised over mock + any `tests/fixtures/real/*` (M8), resampler, phases. 
 - Commands: `uv run python -m src.parse.telemetry --all && uv run python -m src.preprocess.clean --all` (50 matches ≈ 15 s), `uv run pytest`.
 - Note: `data/interim/` added (gitignored) between parse and clean. `scripts/stats.py` is added with M3 because it prints mining stats too.
+
+## M3 — Mining (done 00:38)
+- `src/mining/{snapshot,hausdorff,crowd,gathering,pipeline}.py`: sklearn DBSCAN per t; symmetric Hausdorff (scipy) + bbox lower bound pruning (proof in docstring); Alg. 1 port (closed crowds, R set, branching, contained-crowd removal, time gaps close candidates); TAD port with numpy bit vectors, participators recomputed per sub-crowd, closed gatherings; `run_pipeline(tables, params) → MiningResult` (clusters, labels, links with d_H, crowds, TAD traces, gatherings, crowd_df/gathering_df with phase/centroid/radius/teams).
+- `tests/test_mining.py`: §8 cases (a)–(d), fast group breaks the crowd, Divide case, closedness, margin checks on eps/δ/m_p. 14 tests pass.
+- `scripts/validate_mock.py`: **recall 0.821** (hot_drop 0.75, bridge_camp 0.90, final_circle 0.98), precision 0.71, **0.68 s/match** (max 0.82). Match rule: time IoU ≥ 0.3 and centroid within GT radius + eps.
+- Simulator fix (not the metric): bridge camps had too few people left (kill weight too strong, GT used ≥ 6 people < m_c). Now 3–4 fullest squads within 3.5 km, kill weight 1 + 0.12·enemies(≤8), GT ≥ 8 people everywhere.
+- `scripts/stats.py` prints §8 stats.
+- Open: on mock data almost every crowd is also a gathering at default params (squads stay together). The crowd ≠ gathering difference shows when you raise k_p / m_p. Hot-drop recall 0.75 is the weakest part: brawls lose people quickly.
