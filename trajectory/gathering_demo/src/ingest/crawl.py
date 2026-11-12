@@ -77,6 +77,8 @@ def main() -> None:
     args = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s")
     ds = get_datasource(args.source)
+    if ds.name == "pubg":
+        ds.days = args.days
     t0 = time.time()
     st = crawl(ds, args.max_matches)
     log.info("source=%s %s in %.1fs", ds.name, st, time.time() - t0)

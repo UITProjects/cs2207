@@ -131,7 +131,8 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
     out = dict(source=src, folder=folder, matches=mt, match_id=None, params=default_params(), meta=None)
     if match_picker and len(mt):
         ids = list(mt["match_id"])
-        lab = {r.match_id: f"{r.match_id[-12:]} · {str(r.createdAt)[:10]} · {r.gameMode}" for r in mt.itertuples()}
+        short = lambda m: m if len(m) <= 16 else "…" + m[-10:]  # noqa: E731
+        lab = {r.match_id: f"{short(r.match_id)} · {str(r.createdAt)[:10]} · {r.gameMode}" for r in mt.itertuples()}
         mid = st.sidebar.selectbox("Trận đấu", ids, format_func=lambda m: lab[m], key="match_id")
         out["match_id"] = mid
         out["meta"] = mt.set_index("match_id").loc[mid].to_dict()
