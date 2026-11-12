@@ -1,11 +1,12 @@
 # Erangel (Baltic_Main, remastered) gazetteer — coordinates in METERS, origin top-left, y down.
-# Coordinates are ESTIMATES read off assets/maps/erangel.jpg (8160 m square).
+# Coordinates are ESTIMATES read off assets/maps/erangel.jpg (8160 m square); checked visually with
+# scripts/calibrate_places.py on 2026-11-13 (labels sit on the towns).
 # Calibrate by overlaying: `uv run python scripts/calibrate_places.py` -> PNG with labels.
 # kind: town | hot (hot drop) | bridge | landmark ; hot = landing weight in the mock simulator
 places:
   - {name: Pochinki,       x: 3630, y: 4030, r: 300, kind: hot, hot: 1.0}
   - {name: School,         x: 4190, y: 3310, r: 200, kind: hot, hot: 0.9}
-  - {name: Military Base,  x: 4500, y: 6380, r: 450, kind: hot, hot: 1.0}
+  - {name: Military Base,  x: 4500, y: 6480, r: 450, kind: hot, hot: 1.0}
   - {name: Georgopol,      x: 1840, y: 2520, r: 450, kind: hot, hot: 0.7}
   - {name: Rozhok,         x: 3990, y: 2850, r: 250, kind: hot, hot: 0.6}
   - {name: Yasnaya Polyana, x: 5380, y: 2400, r: 400, kind: hot, hot: 0.6}

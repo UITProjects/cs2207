@@ -1,0 +1,19 @@
+{
+ "match_id": "mock-2207-0042",
+ "mapName": "Baltic_Main",
+ "gameMode": "squad-fpp",
+ "matchType": "official",
+ "createdAt": "2026-11-13T08:23:30Z",
+ "duration": 1703,
+ "n_players": 100,
+ "n_teams": 25,
+ "start": "2026-11-13T08:23:30.329Z",
+ "dt": 10,
+ "n_points": 6422,
+ "n_raw_points": 7356,
+ "raw_dt_median": 10.053,
+ "raw_dt_p10": 8.387,
+ "raw_dt_p90": 11.881,
+ "t_max": 1700,
+ "n_phases": 8
+}

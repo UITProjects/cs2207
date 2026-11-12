@@ -167,3 +167,19 @@ def caption_source(ctx: dict) -> str:
 
 def params_key(p: dict) -> tuple:
     return tuple(sorted(p.items()))
+
+
+@st.cache_data(show_spinner="Đang tổng hợp nhiều trận (chạy pipeline trên từng trận)…", max_entries=4)
+def compute_aggregates(folder: str, params_items: tuple) -> dict:
+    from src.analytics.aggregate import aggregate
+
+    return aggregate(Path(folder), dict(params_items))
+
+
+def aggregates(ctx: dict, use_sidebar: bool) -> tuple[dict, dict]:
+    """Precomputed aggregates at default params when available, else computed (cached)."""
+    params = ctx["params"] if use_sidebar else default_params()
+    pre = load_aggregates(ctx["folder"])
+    if pre is not None and pre.get("info", {}).get("params") == params:
+        return pre, params
+    return compute_aggregates(ctx["folder"], params_key(params)), params

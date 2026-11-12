@@ -4,14 +4,17 @@ Emits the same raw JSON shapes as the PUBG API (docs/schema.md): a JSON:API matc
 telemetry event list (`_D`, `_T`, coordinates in centimeters). It also returns a ground truth of
 the gatherings it scripts on purpose, used only by `scripts/validate_mock.py`:
 
-* hot-drop brawls (phase 0-1): 3-5 squads land on the same hot drop and loot it for 3-5 minutes;
+* hot-drop brawls (phase 0-1): 3-5 squads land around one brawl point of a hot drop and loot it
+  for 3-5 minutes;
 * bridge camps (mid game): 2-3 squads drive to a bridge to the Military Base island and hold it;
 * final-circle crowding: the last zones are small, so the survivors are packed together.
 
 Squads are simulated at the squad level (centre + per-member AR(1) offsets) on a 10 s grid, which
 keeps it vectorised and fast (< 1 s per match). Eliminations follow a target "alive" curve, and
 the victims are drawn with weight growing with the number of enemies nearby, so density and
-elimination risk are linked (visible but noisy signal).
+elimination risk are linked (visible but noisy signal): weight 1 + 0.25·min(enemies within 200 m, 4).
+Ground truth spans are measured on the simulated positions (≥ 8 scripted players in the area for
+≥ 60 s); scripts that fell apart earlier (people killed / dispersed) are not ground truth.
 """
 from __future__ import annotations
 
@@ -48,6 +51,7 @@ MATCH_END = 1700
 FOOT, CAR = 5.0, 14.0  # m/s
 DROP_SAMPLE = 0.03  # share of position samples that go missing
 MAPS_OTHER = ["Desert_Main", "Savage_Main", "Tiger_Main"]
+MIN_GT_STEPS = 6  # a scripted gathering counts as ground truth only if it really lasted ≥ 60 s
 
 
 @lru_cache(maxsize=1)
@@ -148,12 +152,14 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
     for s in order:
         assign[s] = int(rng.choice(len(hot), p=rest_w / rest_w.sum()))
 
+    brawl_pt = {int(h): random_land_point(rng, hot[int(h)]["x"], hot[int(h)]["y"], hot[int(h)]["r"] * 0.3)
+                for h in hot_sites}
     squads: list[Squad] = []
     for s in range(n_squads):
         pl = hot[assign[s]]
         brawl = assign[s] in set(int(h) for h in hot_sites)
         if brawl:
-            d = random_land_point(rng, pl["x"], pl["y"], pl["r"] * 0.5)
+            d = random_land_point(rng, *brawl_pt[assign[s]], 90)
         else:
             d = random_land_point(rng, pl["x"], pl["y"], pl["r"] + 600)
         along = float(np.dot(np.array(d) - p_start, u))
@@ -169,7 +175,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
     for hs in hot_sites:
         pl = hot[int(hs)]
         members = [s for s in range(n_squads) if assign[s] == int(hs)]
-        gt.append(dict(kind="hot_drop", place=pl["name"], center=[pl["x"], pl["y"]], radius=pl["r"] + 150,
+        gt.append(dict(kind="hot_drop", place=pl["name"], center=list(brawl_pt[int(hs)]), radius=250,
                        squads=[squads[s].team_id for s in members],
                        _members=[m for s in members for m in squads[s].members]))
 
@@ -213,7 +219,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
         br = bridges[int(rng.integers(len(bridges)))]
         side = int(rng.integers(2))
         cpt = (br["x1"], br["y1"]) if side == 0 else (br["x2"], br["y2"])
-        camp = dict(t0=float(rng.uniform(420, 560)), bridge=br, point=cpt, k=int(rng.integers(3, 5)),
+        camp = dict(t0=float(rng.uniform(420, 560)), bridge=br, point=cpt, k=4,
                     hold=float(rng.uniform(170, 260)))
 
     # ---- simulation on the sample grid ----
@@ -348,7 +354,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
             near = ((D < 200) & enemy).sum(1)
             if winner_team is None and len(set(team_of[cand])) <= 2 and t > 1450:
                 winner_team = int(rng.choice(sorted(set(team_of[cand]))))
-            w = 1.0 + 0.12 * np.minimum(near, 8).astype(float)
+            w = 1.0 + 0.25 * np.minimum(near, 4).astype(float)
             if winner_team is not None:
                 w[team_of[cand] == winner_team] = 0
             if w.sum() == 0:
@@ -391,7 +397,7 @@ def simulate(match_id: str, seed: int, index: int, n_squads: int = 25, squad_siz
             good = ~np.isnan(P[:, 0])
             d = np.linalg.norm(P[good] - np.array(center), axis=1)
             ok.append(int((d <= radius).sum()) >= min_present)
-        best, cur, s0 = (None, 0), 0, 0
+        best, cur, s0 = (None, MIN_GT_STEPS - 1), 0, 0
         for k2, v in enumerate(ok + [False]):
             if v:
                 if cur == 0:

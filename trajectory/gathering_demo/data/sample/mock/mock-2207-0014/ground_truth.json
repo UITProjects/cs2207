@@ -1,0 +1,220 @@
+{
+ "match_id": "mock-2207-0014",
+ "source": "mock",
+ "seed": 2207,
+ "index": 14,
+ "gatherings": [
+  {
+   "kind": "hot_drop",
+   "place": "Pochinki",
+   "center": [
+    3544.2779772068734,
+    4014.8303579660937
+   ],
+   "radius": 250,
+   "squads": [
+    11,
+    12,
+    17,
+    19
+   ],
+   "t_start": 90.0,
+   "t_end": 330.0,
+   "members": [
+    "account.cc0a222bf17e90aad06dfabe3d2ab16b",
+    "account.8cd7a9d4567a26745ff9cc0a226cfb1c",
+    "account.8bded3db783c57406951945e20d150ca",
+    "account.8525f5e48439894dc52ce47e5068ea61",
+    "account.9b73d35443504b156eeffb861908f979",
+    "account.e4329f3d83509addfa777fff3f1fedf6",
+    "account.274e8432ba140dee1a3bc80152c98e60",
+    "account.2145cd874822e07a76c61814b076ef49",
+    "account.b03e60f702524af64d22e9438feedcd9",
+    "account.31fddc9b34deee3f261b2d97be81c63c",
+    "account.64a870826d9ed59a55e3cffdc88aa307",
+    "account.e183a7fbed10fb18dd734449a0717c87",
+    "account.d9d060f99ec5fbb88e9e5b1e1a28c1ec",
+    "account.12cf6a03f9256c99a81bb7b6a6863fbc",
+    "account.de5ed2adb3f2206888f67be5ba632183",
+    "account.a1ce51eac54716b2caa12edccd33518f"
+   ]
+  },
+  {
+   "kind": "hot_drop",
+   "place": "Rozhok",
+   "center": [
+    3953.0542081071926,
+    2785.5763947152686
+   ],
+   "radius": 250,
+   "squads": [
+    7,
+    23,
+    25
+   ],
+   "t_start": 100.0,
+   "t_end": 280.0,
+   "members": [
+    "account.f45a578041f1faff7fc7e5ee6fbd1396",
+    "account.d91f115003c8eb77101831fc2b7bd8e9",
+    "account.308e88e51ec0119d6f56b2b38aead4d9",
+    "account.156c20d3f28671e8f6cbbb34016d17c4",
+    "account.9db89139b7118d96e9c124f57cbddab6",
+    "account.fc2f5619c88a776873797d005c708ec0",
+    "account.ccaaab712673124c0b42843da48bd195",
+    "account.337c79d9ba3ea3f425e0959467d74ff3",
+    "account.fffc223d6ea34798ce2b29c2e4dff865",
+    "account.e8232136a756b6eea02a53b506ab50b7",
+    "account.697b37565c2f9ef1ef2dd4611504265d",
+    "account.9f10480bc41e2151d9fb7432dfe41f24"
+   ]
+  },
+  {
+   "kind": "hot_drop",
+   "place": "Yasnaya Polyana",
+   "center": [
+    5265.8875644240925,
+    2376.442220885835
+   ],
+   "radius": 250,
+   "squads": [
+    2,
+    4,
+    14
+   ],
+   "t_start": 120.0,
+   "t_end": 350.0,
+   "members": [
+    "account.dc652c89b50bd5c9b6bf7e186b4c76e7",
+    "account.ba08cb665bddb1233247aa008cd46227",
+    "account.915b5d89332a846fb7800a39cf50076f",
+    "account.78f48a25f3d69323ae30298bac3d7ad1",
+    "account.2df1b176b147632ed91951063d821631",
+    "account.2a4cbd4bd9bbdcb5e2f9636baa79963c",
+    "account.106ae6c82e8c7743e146d086b5f86f58",
+    "account.f3b3e98a3ff180da342e071ca805a2d4",
+    "account.01272cd8b7558838c8847686572ce2ea",
+    "account.7ad04ea7c7da51cb9f2416e79a029357",
+    "account.7842c046388d9534d625bd3738fedac9",
+    "account.28f631fe929bf23ce0e8379921c3b70d"
+   ]
+  },
+  {
+   "kind": "hot_drop",
+   "place": "Georgopol",
+   "center": [
+    1740.1303660843428,
+    2481.7314446641553
+   ],
+   "radius": 250,
+   "squads": [
+    5,
+    13,
+    20,
+    22
+   ],
+   "t_start": 100.0,
+   "t_end": 340.0,
+   "members": [
+    "account.a78723e866aefb5fc25b5874326c4e85",
+    "account.ead3af113d474f214d429d7614db2546",
+    "account.49ba2c1b737f851e16aaa78025ce13f4",
+    "account.17a4f3d5c707132854dfae833b5a8587",
+    "account.f8a3a9b273fb904bc76073d2cc602788",
+    "account.85beef6c01fbff0e6cdf41c28308a7c6",
+    "account.7bf6b2cce8dc7ab4c819d04fa01cef80",
+    "account.4d8c15ca75f23ffc821c14b195d3cf8e",
+    "account.702ee0a74e2dd5d90e0b5873ffb0765a",
+    "account.df36d36ab5a8d005ef04c30d46d69feb",
+    "account.66cecff1b510504877e8fcaaf4c44ebd",
+    "account.88e4be10ae1814a051f7606d59336e92",
+    "account.1d6b937e0545c28ef1fa24b68208fa96",
+    "account.6220a8555a701e170ebbf1eca34b9697",
+    "account.201b94e93a37b7897b1118b2a1211f21",
+    "account.e800457d55348c263eaa33c172a2e05e"
+   ]
+  },
+  {
+   "kind": "bridge_camp",
+   "place": "East Bridge",
+   "center": [
+    5510,
+    5730
+   ],
+   "radius": 250,
+   "squads": [
+    6,
+    4,
+    1,
+    18
+   ],
+   "t_start": 590.0,
+   "t_end": 890.0,
+   "members": [
+    "account.40728ec2566819a8db139333a6ba5bf8",
+    "account.f8c8d970772e320eeb39e0513121f9ab",
+    "account.25f27146db059de171b35aa0d4690887",
+    "account.fbe31d87ea6c423770ce03fc6baaea14",
+    "account.2df1b176b147632ed91951063d821631",
+    "account.2a4cbd4bd9bbdcb5e2f9636baa79963c",
+    "account.106ae6c82e8c7743e146d086b5f86f58",
+    "account.f3b3e98a3ff180da342e071ca805a2d4",
+    "account.5932c6ccd001406376bd2c10b769d16d",
+    "account.19718ca8eb4dc518c32961a4c894e624",
+    "account.2fd24af034025d85f596f1f367570608",
+    "account.98cebabe27c73867d8f635035edaba3f",
+    "account.780d49b38f4c430fc03cb1e3b7aa5cdb",
+    "account.5142e92dd59d98595843432445192e75",
+    "account.8520dee1fe7f1b5f5749428fa1b28eb0",
+    "account.5728ba8803dabbf0a4210610ad570edd"
+   ]
+  },
+  {
+   "kind": "final_circle",
+   "place": "final circle",
+   "center": [
+    6059.125212349867,
+    6267.819384009934
+   ],
+   "radius": 350,
+   "squads": [
+    3,
+    4,
+    6,
+    7,
+    10,
+    11,
+    13,
+    16,
+    17,
+    20,
+    21,
+    24,
+    25
+   ],
+   "t_start": 1340.0,
+   "t_end": 1550.0,
+   "members": [
+    "account.3ed16a295f11b2621ff93b7c11315136",
+    "account.2a4cbd4bd9bbdcb5e2f9636baa79963c",
+    "account.f3b3e98a3ff180da342e071ca805a2d4",
+    "account.f8c8d970772e320eeb39e0513121f9ab",
+    "account.fbe31d87ea6c423770ce03fc6baaea14",
+    "account.308e88e51ec0119d6f56b2b38aead4d9",
+    "account.c0d3435796b6267722a8960abfd1058c",
+    "account.575c1a44e53b8e4b608e47bff0b0e31c",
+    "account.cc0a222bf17e90aad06dfabe3d2ab16b",
+    "account.7bf6b2cce8dc7ab4c819d04fa01cef80",
+    "account.654c3cf904ac740c6f56ffa50486b255",
+    "account.e183a7fbed10fb18dd734449a0717c87",
+    "account.df36d36ab5a8d005ef04c30d46d69feb",
+    "account.66cecff1b510504877e8fcaaf4c44ebd",
+    "account.358165c17432b207ff38bc62c849eb62",
+    "account.0a06ebb96d35cee67b01e5393e9a25ac",
+    "account.e8232136a756b6eea02a53b506ab50b7",
+    "account.697b37565c2f9ef1ef2dd4611504265d"
+   ]
+  }
+ ],
+ "note": "Scripted gatherings; spans measured from simulated positions. Never read by mining."
+}

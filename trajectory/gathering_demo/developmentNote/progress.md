@@ -36,3 +36,10 @@
 - `assets/maps/erangel_1024.jpg` (208 KB) is embedded in the figures, so pages stay light.
 - Map alignment checked by rendering through kaleido (dev dep), and trajectories sit on land/bridges.
 - `tests/test_app.py` AppTest: every page + param change + reset → pass.
+
+## M5 — Insights & Coach View (done 00:30)
+- `src/analytics/`: `gazetteer.py`, `hotspots.py` (200 m grid × phase, top places with % matches), `outcomes.py` (player- and team-level elimination ≤ 120 s after the gathering vs a baseline from the same match and time window; ranking vs participations; kills per player-minute inside the hull vs outside), `zone.py` (center/edge/outside/no zone, forced = phase ≥ 6 or edge, time after the zone appeared), `team_report.py` (VOD timestamps), `aggregate.py` (multi-match run + save).
+- Pages `3_Insights.py` (heatmap by phase, top-10 chokepoints, participator-vs-baseline bars with n, kills in/out, ranking box plot with a survivorship caveat, forced vs chosen), `4_Coach_View.py` (route-risk sentence generator with n and a small-sample warning; team report + CSV export).
+- `scripts/build_sample.py --n 30` → `data/sample/mock/` (4.9 MB, 30 matches picked by gathering coverage, + `_aggregates/` at default params so Insights loads instantly). `scripts/calibrate_places.py` → overlay PNG (checked visually; Military Base y moved +100 m).
+- Simulator retuned after diagnosing the misses (fixed the simulator, not the metric): hot-drop squads now land around one shared brawl point (they used to be spread over a whole town, wider than any DBSCAN cluster); density kill weight is 1 + 0.25·min(enemies ≤ 200 m, 4); a GT event must last ≥ 60 s. **Validation: recall 0.97** (hot 0.96, bridge 1.00, final 0.98), precision 0.79, 0.61 s/match. Elimination signal (mock): participator vs baseline is 34 vs 17% in phase 0, 34 vs 25% in phase 1, 42 vs 28% in phase 3.
+- AppTest smoke over all pages passes. Note: with `data/processed/mock` present (no `_aggregates`), the first Insights load computes 50 matches (~30 s, then cached). With only `data/sample` it is instant.
