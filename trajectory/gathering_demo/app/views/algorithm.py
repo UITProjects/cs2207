@@ -12,7 +12,7 @@ import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 from common import verdict  # noqa: E402
 
-from src.viz.cube import FULL, algo_cube, crowd_window  # noqa: E402
+from src.viz.cube import FULL, algo_cube, crowd_window, team_palette, window_teams  # noqa: E402
 from src.viz.map_plot import (  # noqa: E402
     CLUSTER_COLORS,
     NOISE,
@@ -54,50 +54,77 @@ def crowd_label(i: int) -> str:
 
 @st.cache_data(show_spinner="Đang dựng hình 3D…", max_entries=32)
 def _cube(folder: str, mid: str, pk: tuple, mode: str, view: tuple, t_lo: float, t_hi: float,
-          crowd: int | None, noise: bool, connect: bool) -> go.Figure:
+          crowd: int | None, noise: bool, connect: bool, teams: tuple, by: str, colors: tuple) -> go.Figure:
     r = common.mine(folder, mid, pk)
-    return algo_cube(r, common.load_match(folder, mid)["positions"], mode, view, t_lo, t_hi, crowd, noise, connect)
+    return algo_cube(r, common.load_match(folder, mid)["positions"], mode, view, t_lo, t_hi, crowd, noise, connect,
+                     teams=list(teams), by=by, colors=dict(colors))
 
 
-def window_row(key: str, noise_toggle: bool) -> tuple[tuple, float, float, int | None, bool, bool]:
+def window_row(key: str) -> tuple[tuple, float, float, int | None]:
     """Area/time window for tabs ① ②: one crowd's area and span, or the whole map with a time range."""
-    a, b, c_ = st.columns([2, 3, 1.2])
+    a, b = st.columns([2, 3])
     opts = [None] + list(cdf["id"]) if len(cdf) else [None]
     pick = a.selectbox("Vùng xem", opts, index=1 if len(opts) > 1 else 0, key=f"win_{key}",
                        format_func=lambda i: "Toàn bản đồ" if i is None else crowd_label(i))
-    connect = c_.toggle("Nối quỹ đạo", value=True, key=f"conn_{key}")
-    noise = c_.toggle("Hiện nhiễu", value=False, key=f"noise_{key}") if noise_toggle else False
     if pick is None:
-        lo_hi = b.select_slider("Khoảng thời gian (≤ 10 phút)", options=times, key=f"rng_{key}",
-                                value=(times[0], times[min(30, len(times) - 1)]), format_func=fmt_t)
-        lo, hi = lo_hi
+        lo, hi = b.select_slider("Khoảng thời gian (≤ 10 phút)", options=times, key=f"rng_{key}",
+                                 value=(times[0], times[min(30, len(times) - 1)]), format_func=fmt_t)
         if (hi - lo) / 10 > MAX_FULL_STEPS:
             hi = lo + 10 * MAX_FULL_STEPS
             b.caption(f"Giới hạn 10 phút: {fmt_t(lo)}–{fmt_t(hi)}")
-        return FULL, lo, hi, None, noise, connect
+        return FULL, lo, hi, None
     view, lo, hi = crowd_window(res, pick)
     b.caption(f"{fmt_t(lo)} → {fmt_t(hi)} · vùng {int(view[2] - view[0])} m")
-    return view, lo, hi, pick, noise, connect
+    return view, lo, hi, pick
 
 
+BY_TEAM, BY_PLAYER = "Đội (tâm)", "Từng người"
+
+
+def team_row(key: str, view, lo: float, hi: float, noise_toggle: bool = False) -> dict:
+    """Team filter + team-centre / per-player switch. Returns kwargs for _cube (teams, by, colors, noise, connect)."""
+    wt = window_teams(pos, view, lo, hi)
+    colors = team_palette(wt)
+    a, b, c_ = st.columns([4, 2, 1.4])
+    wkey = f"{key}_{int(view[0])}_{int(view[1])}_{int(lo)}_{int(hi)}"  # new window → defaults reset
+    teams = a.multiselect(f"Đội ({len(wt)} đội trong vùng)", wt, default=wt, key=f"teams_{wkey}")
+    by = b.segmented_control("Vẽ theo", [BY_TEAM, BY_PLAYER], default=BY_TEAM, key=f"by_{key}") or BY_TEAM
+    connect, noise = True, False
+    if by == BY_PLAYER:
+        connect = c_.toggle("Nối quỹ đạo", value=True, key=f"conn_{key}")
+        if noise_toggle:
+            noise = c_.toggle("Hiện nhiễu", value=False, key=f"noise_{key}")
+    if teams:
+        st.markdown(" ".join(f'<span class="badge" style="background:{colors[tm]}">{tm}</span>' for tm in teams),
+                    unsafe_allow_html=True)
+    return dict(teams=tuple(teams), by="team" if by == BY_TEAM else "player", colors=tuple(sorted(colors.items())),
+                noise=noise, connect=connect)
+
+
+def cube(mode: str, view, lo, hi, crowd, key: str, noise_toggle: bool = False) -> None:
+    kw = team_row(key, view, lo, hi, noise_toggle)
+    st.plotly_chart(_cube(folder, mid, pk, mode, view, lo, hi, crowd, kw["noise"], kw["connect"], kw["teams"],
+                          kw["by"], kw["colors"]), width="stretch")
+
+
+pk = common.params_key(P)
 tab1, tab2, tab3, tab4 = st.tabs(["① Quỹ đạo", "② Cụm snapshot", "③ Crowd", "④ Gathering"])
 by_t: dict[int, list] = {}
 for cl in res.clusters:
     by_t.setdefault(cl.t, []).append(cl)
-pk = common.params_key(P)
 
 with tab1:
     if is3d:
-        view, lo, hi, cr, _, conn = window_row("raw", False)
-        st.plotly_chart(_cube(folder, mid, pk, "raw", view, lo, hi, cr, False, conn), width="stretch")
+        view, lo, hi, cr = window_row("raw")
+        cube("raw", view, lo, hi, cr, "raw")
     else:
         st.plotly_chart(animation(pos, zones), width="stretch")
 
 with tab2:
-    st.caption(f"DBSCAN eps = {P['eps']} m · min_pts = {P['min_pts']} · đậm = cụm ≥ m_c = {P['m_c']}")
+    st.caption(f"DBSCAN eps = {P['eps']} m · min_pts = {P['min_pts']} · đĩa đậm = cụm ≥ m_c = {P['m_c']}")
     if is3d:
-        view, lo, hi, cr, nz, conn = window_row("clusters", True)
-        st.plotly_chart(_cube(folder, mid, pk, "clusters", view, lo, hi, cr, nz, conn), width="stretch")
+        view, lo, hi, cr = window_row("clusters")
+        cube("clusters", view, lo, hi, cr, "clusters", noise_toggle=True)
     else:
         busiest = max(times, key=lambda x: sum(c.size >= P["m_c"] for c in by_t.get(x, [])), default=times[0])
         tt = st.select_slider("Mốc t", options=times, value=busiest, format_func=fmt_t, key="t_snap")
@@ -146,7 +173,7 @@ with tab3:
         with a:
             if is3d:
                 view, lo, hi = crowd_window(res, ci)
-                st.plotly_chart(_cube(folder, mid, pk, "crowds", view, lo, hi, ci, False, True), width="stretch")
+                cube("crowds", view, lo, hi, ci, "crowds")
             else:
                 allp = np.vstack([c.pts for c in cs])
                 lo_, hi_ = allp.min(0), allp.max(0)
@@ -172,7 +199,8 @@ with tab3:
             st.plotly_chart(sz, width="stretch")
 
 with tab4:
-    st.caption(f"k_p = {P['k_p']} · m_p = {P['m_p']} · cam = participator, xanh = cụm thuộc gathering")
+    st.caption(f"k_p = {P['k_p']} · m_p = {P['m_p']} · nét đậm = có participator · nét mảnh đứt = chỉ đi qua · "
+               "đĩa xanh = cụm thuộc gathering")
     gdf = res.gathering_df
     if cdf.empty:
         verdict("Chưa có crowd nên chưa có gathering.", False)
@@ -214,8 +242,7 @@ with tab4:
         with a:
             if is3d:
                 view, lo, hi = crowd_window(res, ci2)
-                st.plotly_chart(_cube(folder, mid, pk, "participators", view, lo, hi, ci2, False, True),
-                                width="stretch")
+                cube("participators", view, lo, hi, ci2, "par")
             elif mine_g:
                 k, g, par = mine_g[0]
                 row = gdf.loc[k]

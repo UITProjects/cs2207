@@ -87,3 +87,14 @@ User feedback: "make the web more simple … users already know the terminology 
   - `algo_cube` + `crowd_window` (algorithm page: 3D default, 2D switch). Tabs: raw / cluster discs / crowd colours + d_H links / participators orange + gathering clusters blue.
   - Each cube is 0.6–1 MB of JSON and builds in under 0.25 s.
 - Tests: new `tests/test_cube.py` (floor, disc merge, 4 algo modes, team cube); `test_app.py` updated (2 views, 3D↔2D switch, cube toggles, encounter 2D). **44 passed, ruff clean.** Playwright Chrome: 0 exceptions on both pages; cube floor readable (Pochinki label reads correctly, not mirrored).
+
+## M4d — Team colours + team filter in the algorithm 3D cubes
+User: "highlight colour which teams, support filter in teams too; I can't see how the teams move" (tab ④ was all orange zigzags).
+- `algo_cube(teams, by, colors)`:
+  - every trajectory is coloured by team (`team_palette`, 16 high-contrast colours, assigned per window);
+  - by="team" (default) draws one centre line per team, which removes the 4-member zigzag; by="player" keeps per-player lines in the team colour;
+  - the legend has one entry per team ("T05 · 4 participator" / "· chỉ đi qua"), and clicking it hides or shows the team;
+  - discs are neutral (grey / light orange / light blue) so the team colours stand out; d_H links are dark grey;
+  - participators: a solid thick line for teams with participators, thin and dashed for teams that only passed through.
+- Algorithm page, every 3D tab: team multiselect "Đội (n đội trong vùng)" (defaults reset when the window changes), "Vẽ theo: Đội (tâm) | Từng người", and colour chips. "Nối quỹ đạo"/"Hiện nhiễu" appear only in per-player mode.
+- Tests: 47 passed (new: team colouring and filter, participators solid vs passing, app filter + per-player switch). Playwright: 0 exceptions; Georgopol crowd shows T05/T20/T24 in red/green/orange.

@@ -73,12 +73,14 @@ def _tick_step(span: float) -> int:
 
 def _xyz(df: pd.DataFrame, gap: float = 10.5) -> tuple[list, list, list, list]:
     xs, ys, zs, hv = [], [], [], []
+    has_label = "label" in df
     for p, g in df.sort_values(["player", "t"]).groupby("player", sort=False):
         prev = None
-        for t, x, y in zip(g["t"], g["x"], g["y"], strict=True):
+        labels = g["label"] if has_label else [None] * len(g)
+        for t, x, y, lb in zip(g["t"], g["x"], g["y"], labels, strict=True):
             if prev is not None and t - prev > gap:
                 xs.append(None), ys.append(None), zs.append(None), hv.append(None)
-            xs.append(x), ys.append(y), zs.append(t), hv.append(f"{p} · {fmt_t(t)}")
+            xs.append(x), ys.append(y), zs.append(t), hv.append(lb or f"{p} · {fmt_t(t)}")
             prev = t
         xs.append(None), ys.append(None), zs.append(None), hv.append(None)
     return xs, ys, zs, hv
@@ -133,7 +135,8 @@ def space_time_cube(view: tuple[float, float, float, float], t_lo: float, t_hi: 
         xs, ys, zs, hv = _xyz(ln["df"])
         mk = ln.get("markers", False)
         fig.add_trace(go.Scatter3d(x=xs, y=ys, z=zs, mode="lines+markers" if mk else "lines", name=ln.get("name", ""),
-                                   line=dict(color=ln["color"], width=ln.get("width", 2)), opacity=ln.get("opacity", 1),
+                                   line=dict(color=ln["color"], width=ln.get("width", 2), dash=ln.get("dash", "solid")),
+                                   opacity=ln.get("opacity", 1), legendgroup=ln.get("group"),
                                    marker=dict(size=ln.get("marker_size", 2), color=ln["color"]),
                                    hovertext=hv, hoverinfo="text", showlegend=ln.get("legend", False),
                                    connectgaps=False))
@@ -240,34 +243,88 @@ def _in(df: pd.DataFrame, view, t_lo, t_hi) -> pd.DataFrame:
     return df[df["t"].between(t_lo, t_hi) & df["x"].between(view[0], view[2]) & df["y"].between(view[1], view[3])]
 
 
+TEAM_PALETTE = ["#e6194B", "#4363d8", "#3cb44b", "#f58231", "#911eb4", "#42d4f4", "#f032e6", "#9A6324",
+                "#ffe119", "#000075", "#469990", "#800000", "#bfef45", "#fabed4", "#808000", "#dcbeff"]
+
+
+def team_palette(teams: list[str]) -> dict[str, str]:
+    """High-contrast colour per team, in the given order (cycles after 16)."""
+    return {tm: TEAM_PALETTE[i % len(TEAM_PALETTE)] for i, tm in enumerate(teams)}
+
+
+def window_teams(pos: pd.DataFrame, view, t_lo: float, t_hi: float) -> list[str]:
+    """Teams with at least one position inside the view box and time window, sorted."""
+    return sorted(_in(pos, view, t_lo, t_hi)["team"].unique())
+
+
+def _team_centre(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per (team, t): mean position of the team's members in df; `player` = team for the line helper."""
+    out = df.groupby(["team", "t"], as_index=False).agg(x=("x", "mean"), y=("y", "mean"), n=("player", "nunique"))
+    out["player"] = out["team"]
+    out["label"] = [f"{tm} · {fmt_t(t)} · {n} người" for tm, t, n in zip(out["team"], out["t"], out["n"], strict=True)]
+    return out
+
+
 def algo_cube(res, pos: pd.DataFrame, mode: str, view, t_lo: float, t_hi: float, crowd_idx: int | None = None,
-              show_noise: bool = False, connect: bool = True, height: int = 640) -> go.Figure:
-    """mode: raw | clusters | crowds | participators — the four algorithm steps in (x, y, t)."""
+              show_noise: bool = False, connect: bool = True, height: int = 640, teams: list[str] | None = None,
+              by: str = "team", colors: dict[str, str] | None = None) -> go.Figure:
+    """mode: raw | clusters | crowds | participators — the four algorithm steps in (x, y, t).
+    Trajectories are coloured by team (`colors`, default `team_palette`) and limited to `teams`;
+    by="team" draws one centre line per team, by="player" one line per player. Discs/links are not filtered."""
     P = res.params
     win = _in(pos, view, t_lo, t_hi)
+    all_teams = sorted(win["team"].unique())
+    colors = colors or team_palette(all_teams)
+    keep = all_teams if teams is None else [tm for tm in all_teams if tm in set(teams)]
     shown = [c for c in res.clusters if t_lo <= c.t <= t_hi
              and view[0] <= c.centroid[0] <= view[2] and view[1] <= c.centroid[1] <= view[3]]
     times = sorted(win["t"].unique())
     planes = times if len(times) <= 20 else []
     lines, discs, links = [], [], []
 
-    def line(df, color, width, name="", markers=True, opacity=1.0):
-        if not connect:  # points only: give every point its own segment
-            df = df.assign(player=df["player"] + "@" + df["t"].astype(str))
-        lines.append(dict(df=df, color=color, width=width, name=name, markers=markers, opacity=opacity,
-                          marker_size=3 if width > 3 else 2))
+    par: set[str] = set()
+    members: set[str] = set()
+    if mode == "participators" and crowd_idx is not None:
+        td = res.tads[crowd_idx]
+        par = set(td["trace"][0]["par"]) if td["trace"] else set()
+        members = {m for cid in res.crowds[crowd_idx] for m in res.clusters[cid].members}
 
-    lab = res.labels.merge(win[["player", "t"]], on=["player", "t"])
-    clustered = lab[lab["cluster"] >= 0]
-    if mode == "raw":
-        line(win, "#5A6070", 2)
-    else:
-        if mode in ("clusters", "crowds"):
-            line(clustered, "#8E94A3", 2)
-            if show_noise:
-                nz = lab[lab["cluster"] < 0]
-                lines.append(dict(df=nz.assign(player=nz["player"] + "@" + nz["t"].astype(str)), color="#CFCAC0",
-                                  width=1, markers=True, marker_size=2))
+    for tm in keep:
+        tw = win[win["team"] == tm]
+        col = colors.get(tm, "#5A6070")
+        n_players = tw["player"].nunique()
+        if mode == "participators":
+            tw = tw[tw["player"].isin(members)]
+            if tw.empty:
+                continue
+            n_par = int(tw.loc[tw["player"].isin(par), "player"].nunique())
+            name = f"{tm} · {n_par} participator" if n_par else f"{tm} · chỉ đi qua"
+        else:
+            name = f"{tm} · {n_players} người"
+        if by == "team":
+            solid = mode != "participators" or n_par > 0
+            lines.append(dict(df=_team_centre(tw), color=col, width=7 if solid else 3, dash="solid" if solid else "dash",
+                              name=name, legend=True, group=tm))
+            continue
+        tw = tw.assign(label=[f"{p} · {tm} · {fmt_t(t)}" for p, t in zip(tw["player"], tw["t"], strict=True)])
+        if not connect:  # points only: every point its own segment
+            tw = tw.assign(player=tw["player"] + "@" + tw["t"].astype(str))
+        if mode == "participators":
+            is_par = tw["player"].str.split("@").str[0].isin(par)
+            lines.append(dict(df=tw[is_par], color=col, width=7, markers=True, marker_size=3, name=name, legend=True,
+                              group=tm))
+            lines.append(dict(df=tw[~is_par], color=col, width=2.5, opacity=0.5, markers=True, marker_size=2,
+                              name=name, legend=bool(not is_par.any()), group=tm))
+        else:
+            lines.append(dict(df=tw, color=col, width=2.5, markers=True, marker_size=2, name=name, legend=True,
+                              group=tm))
+    if show_noise and by == "player" and mode in ("clusters", "crowds"):
+        lab = res.labels.merge(win[["player", "t"]], on=["player", "t"])
+        nz = lab[lab["cluster"] < 0]
+        lines.append(dict(df=nz.assign(player=nz["player"] + "@" + nz["t"].astype(str)), color="#CFCAC0",
+                          width=1, markers=True, marker_size=2))
+
+    if mode != "raw":
         crowd_of: dict[int, int] = {}
         for k, cr in enumerate(res.crowds):
             for cid in cr:
@@ -276,21 +333,19 @@ def algo_cube(res, pos: pd.DataFrame, mode: str, view, t_lo: float, t_hi: float,
             big = c.size >= P["m_c"]
             hover = f"c{c.k} · {fmt_t(c.t)} · {c.size} người"
             if mode == "clusters":
-                col, op = (DARK, 0.45) if big else (PALE, 0.35)
+                col, op = (DARK, 0.35) if big else (PALE, 0.3)
             elif mode == "crowds":
                 k = crowd_of.get(c.id)
-                if k is None:
-                    col, op = PALE, 0.25
-                elif crowd_idx is None or k == crowd_idx:
-                    col, op = CROWD_COLORS[k % len(CROWD_COLORS)], 0.5
+                if k is not None and (crowd_idx is None or k == crowd_idx):
+                    col, op = "#F3C9A8", 0.45
                     hover += f" · Cr{k + 1}"
                 else:
-                    col, op = CROWD_COLORS[k % len(CROWD_COLORS)], 0.15
+                    col, op = PALE, 0.2
             else:  # participators
                 if crowd_idx is None or c.id not in res.crowds[crowd_idx]:
                     continue
                 in_g = any(c.id in g for g, _, ci in res.gatherings if ci == crowd_idx)
-                col, op = (BLUE, 0.35) if in_g else (PALE, 0.35)
+                col, op = ("#9DBCE0", 0.4) if in_g else (PALE, 0.35)
             discs.append(dict(pts=c.pts, t=c.t, color=col, opacity=op, hover=hover))
         if mode == "crowds":
             ids = {c.id for c in shown}
@@ -298,18 +353,8 @@ def algo_cube(res, pos: pd.DataFrame, mode: str, view, t_lo: float, t_hi: float,
                 if not lk.close or lk.a not in ids or lk.b not in ids:
                     continue
                 a, b = res.clusters[lk.a], res.clusters[lk.b]
-                ka, kb = crowd_of.get(lk.a), crowd_of.get(lk.b)
-                col = CROWD_COLORS[ka % len(CROWD_COLORS)] if ka is not None and ka == kb else "#9C9483"
-                if crowd_idx is not None and ka != crowd_idx:
-                    col = "#CFCAC0"
-                links.append(dict(a=(*a.centroid, a.t), b=(*b.centroid, b.t), color=col,
+                sel = crowd_idx is None or crowd_of.get(lk.a) == crowd_idx
+                links.append(dict(a=(*a.centroid, a.t), b=(*b.centroid, b.t), color="#3A3F4B" if sel else "#CFCAC0",
                                   hover=f"d_H = {lk.dH:.0f} m ≤ δ = {P['delta']}" if lk.dH is not None else ""))
-        if mode == "participators" and crowd_idx is not None:
-            td = res.tads[crowd_idx]
-            par = set(td["trace"][0]["par"]) if td["trace"] else set()
-            members = {m for cid in res.crowds[crowd_idx] for m in res.clusters[cid].members}
-            line(win[win["player"].isin(members - par)], "#8E94A3", 3, name="có mặt, chưa đủ k_p")
-            line(win[win["player"].isin(par)], ORANGE, 7, name="participator")
-            lines[-2]["legend"] = lines[-1]["legend"] = True
     return space_time_cube(view, t_lo, t_hi, lines=lines, discs=discs, links=links, planes_at=planes, height=height,
                            rev=f"algo_{mode}")

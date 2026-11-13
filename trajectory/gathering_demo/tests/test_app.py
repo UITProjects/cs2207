@@ -64,3 +64,14 @@ def test_match_cube_toggles_and_encounter_2d():
     assert not at.exception, [e.value for e in at.exception]
     at.get("button_group")[0].set_value("2D").run()
     assert not at.exception, [e.value for e in at.exception]
+
+
+def test_algorithm_team_filter_and_per_player():
+    at = routed("views/algorithm.py")
+    ms = at.multiselect[0]
+    assert len(ms.value) >= 2
+    ms.set_value(ms.value[:1]).run()
+    assert not at.exception, [e.value for e in at.exception]
+    by = next(b for b in at.get("button_group") if b.key == "by_raw")
+    by.set_value("Từng người").run()
+    assert not at.exception, [e.value for e in at.exception]
