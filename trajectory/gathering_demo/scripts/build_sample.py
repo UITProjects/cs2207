@@ -1,5 +1,4 @@
-"""Pick N processed matches with good gathering coverage → data/sample/{source}/ (committed, offline demo)
-and precompute multi-match aggregates at the default parameters (data/sample/{source}/_aggregates/).
+"""Pick N processed matches with good gathering coverage → data/sample/{source}/ (committed, offline demo).
 
     uv run python scripts/build_sample.py --n 30 [--source mock]
     uv run python scripts/build_sample.py --match mock-2207-0001     # exactly these match(es)
@@ -13,19 +12,20 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.analytics.aggregate import aggregate, mine_one, save  # noqa: E402
+from src.analytics.gazetteer import nearest_place  # noqa: E402
 from src.config import datasource_name, default_params, path  # noqa: E402
+from src.mining.pipeline import run_pipeline  # noqa: E402
 from src.parse.telemetry import read_tables  # noqa: E402
 
 KEEP = ["positions.parquet", "zones.parquet", "kills.parquet", "results.parquet", "meta.json"]
 
 
 def score(d: Path, params: dict) -> float:
-    t = read_tables(d)
-    _, g = mine_one(t, params)
+    g = run_pipeline(read_tables(d), params).gathering_df
     if g.empty:
         return 0.0
-    return len(g) + 2 * g["phase"].nunique() + 3 * g["place"].str.contains("Bridge").sum()
+    bridges = sum("Bridge" in nearest_place(x, y) for x, y in zip(g["cx"], g["cy"], strict=True))
+    return len(g) + 2 * g["phase"].nunique() + 3 * bridges
 
 
 def main() -> None:
@@ -56,10 +56,8 @@ def main() -> None:
         gt = path("raw") / src / d.name / "ground_truth.json"
         if gt.exists():
             shutil.copy2(gt, out / d.name / "ground_truth.json")
-    agg = aggregate(out, params)
-    save(agg, out / "_aggregates", params)
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
-    print(json.dumps(dict(source=src, out=str(out), matches=len(ranked), gatherings=len(agg["gatherings"]),
+    print(json.dumps(dict(source=src, out=str(out), matches=len(ranked),
                           size_mb=round(size / 1e6, 2))))
 
 

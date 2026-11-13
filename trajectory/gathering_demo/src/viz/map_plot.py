@@ -79,8 +79,8 @@ def _broken_line(df: pd.DataFrame, gap: float = 10.5) -> tuple[list, list]:
 
 def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], colors: dict[str, str],
                 zones: pd.DataFrame | None = None, height: int = 760, tick_s: int = 180) -> go.Figure:
-    """Squad-centre path of every team: grey for the others, thick colour for `focus` teams with a landing
-    marker (●), an end marker (✖ eliminated / ★ alive at the end) and time ticks every `tick_s` seconds."""
+    """Squad-centre path of every team: grey for the others, thick colour for `focus` teams with a start
+    marker (● landing), an end marker (■ end of trajectory) and time ticks every `tick_s` seconds."""
     fig = base_map(height, dim=0.45)
     place_labels(fig)
     xs, ys = [], []
@@ -100,8 +100,7 @@ def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], c
         col = colors[team]
         r = info.loc[team]
         x, y = _broken_line(tr)
-        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=col, width=4), name=f"{team} · hạng {r['rank']}",
-                                 hoverinfo="name"))
+        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=col, width=4), name=team, hoverinfo="name"))
         ticks = tr[(tr["t"] % tick_s) < 10]
         keep, last = [], None  # skip a tick that would sit on top of the previous one (team standing still)
         for i, rr in ticks.iterrows():
@@ -118,12 +117,9 @@ def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], c
         fig.add_trace(go.Scatter(x=[a.x], y=[a.y], mode="markers", showlegend=False, hoverinfo="text",
                                  hovertext=f"{team} tiếp đất {fmt_t(a.t)} · {r['land_place']}",
                                  marker=dict(size=15, color=col, symbol="circle", line=dict(width=2.5, color="white"))))
-        sym = "star" if r["survived"] else "x"
         fig.add_trace(go.Scatter(x=[b.x], y=[b.y], mode="markers", showlegend=False, hoverinfo="text",
-                                 hovertext=f"{team} {'còn sống cuối trận' if r['survived'] else 'bị loại'} "
-                                           f"{fmt_t(r['out_t'])} · {r['out_place']}",
-                                 marker=dict(size=20 if sym == "star" else 16, color=col, symbol=sym,
-                                             line=dict(width=2, color="white"))))
+                                 hovertext=f"{team} kết thúc quỹ đạo {fmt_t(r['end_t'])} · {r['end_place']}",
+                                 marker=dict(size=13, color=col, symbol="square", line=dict(width=2, color="white"))))
     if zones is not None and len(zones):
         z = zones.iloc[-1]
         fig.update_layout(shapes=[circle(z.safe_x, z.safe_y, z.safe_r, "#4aa3ff", dash="dot", width=2)])
@@ -146,11 +142,10 @@ def _play_controls(fig: go.Figure, times: list, frame_ms: int) -> None:
                              for t in times])])
 
 
-def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, kills: pd.DataFrame | None, focus: list[str],
-           colors: dict[str, str], trail_steps: int = 6, follow: str | None = None, follow_half: float = 700,
+def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, focus: list[str], colors: dict[str, str], trail_steps: int = 6, follow: str | None = None, follow_half: float = 700,
            height: int = 760, frame_ms: int = 250, max_frames: int = 300) -> go.Figure:
     """Animated replay: other players as small grey dots, focus teams as big coloured dots with a tail of
-    the last `trail_steps` positions, recent kills (≤ 30 s) as ✖. `follow` keeps the view on one team."""
+    the last `trail_steps` positions. `follow` keeps the view on one team."""
     counts = pos.groupby("t").size()
     start = counts.index[counts >= 0.5 * counts.max()].min() if len(counts) else 0  # skip the near-empty drop
     times = [t for t in sorted(pos["t"].unique()) if t >= start]
@@ -159,7 +154,6 @@ def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, kills: pd.DataFrame | 
     dt = float(np.median(np.diff(times))) if len(times) > 1 else 10.0
     by_t = {t: g for t, g in pos.groupby("t")}
     fpos = pos[pos["team"].isin(focus)].sort_values(["player", "t"])
-    kills = kills if kills is not None else pd.DataFrame(columns=["t", "x", "y", "victim", "victim_team"])
     centre = pos[pos["team"] == follow].groupby("t")[["x", "y"]].mean() if follow else None
 
     def frame_data(t):
@@ -182,16 +176,12 @@ def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, kills: pd.DataFrame | 
             out.append(go.Scatter(x=now["x"], y=now["y"], mode="markers", hoverinfo="text",
                                   text=now["player"] + " · " + team, showlegend=False,
                                   marker=dict(size=12, color=colors[team], line=dict(width=1.5, color="white"))))
-        k = kills[(kills["t"] > t - 30) & (kills["t"] <= t)]
-        out.append(go.Scatter(x=k["x"], y=k["y"], mode="markers", hoverinfo="text", showlegend=False,
-                              text=[f"✖ {v} ({vt})" for v, vt in zip(k["victim"], k["victim_team"], strict=True)],
-                              marker=dict(size=13, symbol="x", color="#ff2d55", line=dict(width=1, color="white"))))
         return out
 
     last_view = [None]
 
     def frame_layout(t) -> dict:
-        lay = dict(shapes=zone_shapes(zones, t), title=f"t = {fmt_t(t)} · còn {len(by_t.get(t, []))} người")
+        lay = dict(shapes=zone_shapes(zones, t), title=f"t = {fmt_t(t)} · {len(by_t.get(t, []))} người")
         if centre is not None and len(centre):
             if t in centre.index:
                 c = centre.loc[t]

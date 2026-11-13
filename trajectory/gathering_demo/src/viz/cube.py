@@ -188,7 +188,8 @@ def space_time_cube(view: tuple[float, float, float, float], t_lo: float, t_hi: 
 def team_cube(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], colors: dict[str, str],
               gathering_df: pd.DataFrame | None, clusters: list, t_range: tuple[float, float],
               show_others: bool = True, show_gatherings: bool = True, height: int = 720) -> go.Figure:
-    """Team centre tracks in (x, y, t); focus teams thick and coloured, gatherings as orange disc columns."""
+    """Team centre tracks in (x, y, t); focus teams thick and coloured (● start, ■ end of trajectory),
+    gatherings as orange disc columns."""
     t_lo, t_hi = t_range
     tr = tracks[tracks["t"].between(t_lo, t_hi)].rename(columns={"team": "player"})
     lines = []
@@ -199,17 +200,16 @@ def team_cube(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], col
     points = []
     for tm in focus:
         d = tr[tr["player"] == tm]
-        lines.append(dict(df=d, color=colors[tm], width=8, name=f"{tm} · hạng {info.loc[tm, 'rank']}", legend=True))
+        lines.append(dict(df=d, color=colors[tm], width=8, name=tm, legend=True))
         if d.empty:
             continue
         a, b = d.iloc[0], d.iloc[-1]
-        if a.t <= t_lo + 10 or a.t == tracks.loc[tracks["team"] == tm, "t"].min():
+        if a.t == info.loc[tm, "land_t"]:
             points.append(dict(x=a.x, y=a.y, t=a.t, color=colors[tm], symbol="circle", size=7,
-                               hover=f"{tm} tiếp đất {fmt_t(a.t)}"))
-        if b.t >= info.loc[tm, "out_t"] - 10:
-            alive = bool(info.loc[tm, "survived"])
-            points.append(dict(x=b.x, y=b.y, t=b.t, color=colors[tm], symbol="diamond" if alive else "x", size=8,
-                               hover=f"{tm} {'còn sống' if alive else 'bị loại'} {fmt_t(b.t)}"))
+                               hover=f"{tm} tiếp đất {fmt_t(a.t)} · {info.loc[tm, 'land_place']}"))
+        if b.t == info.loc[tm, "end_t"]:
+            points.append(dict(x=b.x, y=b.y, t=b.t, color=colors[tm], symbol="square", size=7,
+                               hover=f"{tm} kết thúc quỹ đạo {fmt_t(b.t)} · {info.loc[tm, 'end_place']}"))
     discs, labels = [], []
     if show_gatherings and gathering_df is not None and len(gathering_df):
         for g in gathering_df.itertuples():

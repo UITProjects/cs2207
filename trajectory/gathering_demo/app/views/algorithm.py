@@ -256,3 +256,6 @@ with tab4:
                                 width="stretch")
             else:
                 verdict("Crowd này không có gathering.", False)
+
+st.divider()
+st.page_link("views/match.py", label="Xem kết quả: các đội di chuyển và tụ họp ở đâu →", icon="🎯")

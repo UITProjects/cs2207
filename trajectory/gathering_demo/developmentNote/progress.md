@@ -117,3 +117,20 @@ User: "where is the mining part and the insight… the business value that the c
   - `render_encounter` shared by the cards (evidence expander), VOD row selection and the encounter tab;
   - CSS: `.vchain`, `.card-big`, `.advice`.
 - Tests: new `tests/test_coach.py` (4 insights with valid evidence, VOD flags sorted/empty, synthetic losses) + match page value/VOD test. **51 passed, ruff clean.** Playwright: 0 exceptions on all 5 tabs.
+
+## M4f — Trajectory-only review; algorithm first → result
+User: "keep pages, components only related to trajectory" and "make the algorithm present first → then result". They chose to remove the archived pages, the Xoay bo tab, the coach cards + VOD tab, and all kill/elimination content.
+- Menu: ① 🔬 Thuật toán (default) → ② 🎯 Kết quả (`/ket-qua`), with links both ways.
+- Kết quả page:
+  - the strip shows players → points → clusters → crowds → gatherings → teams involved;
+  - tabs 🗺️ Di chuyển (routes / replay / 3D) and 🎯 Gathering (timeline + one gathering in 3D/2D with members present and participators per team);
+  - no ranks, no ✖ kill markers, no "bị loại".
+- `movement.team_summary` now keeps only trajectory fields (land, route, end of trajectory, km, vehicle %, gatherings). `default_focus` = the teams with the most gatherings. `team_routes` / `team_cube` use ● start and ■ end markers; `replay` has no kills argument.
+- Deleted:
+  - `app/archive/` (intro, Data Explorer, Insights, Coach View, Sensitivity);
+  - `src/analytics/{coach,team_report,outcomes,hotspots,aggregate,zone}.py` and `tests/test_coach.py`;
+  - the aggregate helpers in `common.py`;
+  - `data/sample/mock/_aggregates`.
+  
+  `build_sample.py` no longer builds aggregates. The parser still outputs kills/results tables (raw data), but nothing in the UI uses them.
+- Tests: 44 passed, ruff clean (new: default page = algorithm; result page has 2 tabs and no rank/kill/VOD text).

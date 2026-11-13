@@ -1,4 +1,4 @@
-"""Shared app helpers: paths, CSS, sidebar (source badge, match picker, §3 parameters), cached loaders."""
+"""Shared app helpers: paths, CSS, sidebar (source badge, match info, §3 parameters), cached loaders."""
 from __future__ import annotations
 
 import json
@@ -49,13 +49,6 @@ CSS = f"""<style>
 .vchain .step.mine {{ border-color: #2D5F9A; background: {ICE}; }}
 .vchain .step.value {{ border-color: {RUST}; background: {PEACH}; }}
 .vchain .arrow {{ color: {RUST}; font-size: 20px; font-weight: bold; }}
-.card-title {{ font-size: 18px; font-weight: bold; color: {INK}; }}
-.card-big {{ font-size: 44px; font-weight: 800; color: {RUST}; line-height: 1.05; margin-top: 4px; }}
-.card-big small {{ font-size: 15px; font-weight: 600; color: #6B7080; margin-left: 6px; }}
-.card-detail {{ font-size: 15px; line-height: 1.5; margin: 6px 0; }}
-.advice {{ background: {PEACH}; border-left: 5px solid {RUST}; border-radius: 6px; padding: 8px 12px;
-           font-size: 15px; line-height: 1.45; margin: 6px 0; }}
-.evidence {{ font-size: 13px; color: #6B7080; }}
 </style>"""
 
 
@@ -107,18 +100,6 @@ def mine(folder: str, match_id: str, params_items: tuple) -> MiningResult:
         if len(df):
             df["place"] = [nearest_place(x, y) for x, y in zip(df["cx"], df["cy"], strict=True)]
     return res
-
-
-@st.cache_data(show_spinner=False)
-def load_aggregates(folder: str) -> dict | None:
-    """Precomputed multi-match aggregates (scripts/build_sample.py) for the default parameters."""
-    f = Path(folder) / "_aggregates"
-    if not (f / "gatherings.parquet").exists():
-        return None
-    out = {p.stem: pd.read_parquet(p) for p in f.glob("*.parquet")}
-    if (f / "info.json").exists():
-        out["info"] = json.loads((f / "info.json").read_text())
-    return out
 
 
 # ---------------- sidebar ----------------
@@ -208,19 +189,3 @@ def caption_source(ctx: dict) -> str:
 
 def params_key(p: dict) -> tuple:
     return tuple(sorted(p.items()))
-
-
-@st.cache_data(show_spinner="Đang tổng hợp nhiều trận (chạy pipeline trên từng trận)…", max_entries=4)
-def compute_aggregates(folder: str, params_items: tuple) -> dict:
-    from src.analytics.aggregate import aggregate
-
-    return aggregate(Path(folder), dict(params_items))
-
-
-def aggregates(ctx: dict, use_sidebar: bool) -> tuple[dict, dict]:
-    """Precomputed aggregates at default params when available, else computed (cached)."""
-    params = ctx["params"] if use_sidebar else default_params()
-    pre = load_aggregates(ctx["folder"])
-    if pre is not None and pre.get("info", {}).get("params") == params:
-        return pre, params
-    return compute_aggregates(ctx["folder"], params_key(params)), params

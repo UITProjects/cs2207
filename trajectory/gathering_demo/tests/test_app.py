@@ -7,8 +7,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).resolve().parents[1] / "app"
-VIEWS = ["views/match.py", "views/algorithm.py"]  # in the menu (app/Home.py router)
-ARCHIVE = sorted(f"archive/{p.name}" for p in (APP / "archive").glob("*.py"))  # kept, not in the menu
+VIEWS = ["views/algorithm.py", "views/match.py"]  # menu order (app/Home.py router): algorithm → result
 
 
 def routed(view: str) -> AppTest:
@@ -23,10 +22,10 @@ def test_view_runs(view):
     assert not at.exception, [e.value for e in at.exception]
 
 
-@pytest.mark.parametrize("page", ARCHIVE)
-def test_archive_page_runs(page):
-    at = AppTest.from_file(str(APP / page), default_timeout=120).run()
-    assert not at.exception, [e.value for e in at.exception]
+def test_algorithm_is_default_page():
+    at = AppTest.from_file(str(APP / "Home.py"), default_timeout=120).run()
+    assert not at.exception
+    assert any("Thuật toán" in t.value for t in at.title)
 
 
 def _bg(at, key):
@@ -72,15 +71,13 @@ def test_match_cube_toggles_and_encounter_2d():
     assert not at.exception, [e.value for e in at.exception]
 
 
-def test_match_value_first_tabs_and_vod():
+def test_result_page_is_trajectory_only():
     at = routed("views/match.py")
-    md = " ".join(m.value for m in at.markdown)
-    assert "kết luận cho HLV" in md and "card-big" in md and "👉" in md  # value chain + insight cards
-    sb = at.selectbox(key=next(s.key for s in at.selectbox if s.key and s.key.startswith("vod_team_")))
-    for team in sb.options[:3]:
-        sb.set_value(team.split(" · ")[0]).run()
-        assert not at.exception, [e.value for e in at.exception]
-    assert at.get("download_button"), "VOD CSV download missing"
+    text = " ".join([m.value for m in at.markdown] + [c.value for c in at.caption])
+    assert "gathering" in text
+    for banned in ("bị loại", "hạng", "kết luận cho HLV", "VOD"):
+        assert banned not in text, banned
+    assert len(at.tabs) == 2
 
 
 def test_algorithm_team_filter_and_per_player():
