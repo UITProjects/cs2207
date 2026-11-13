@@ -4,12 +4,16 @@ This demo mines **Crowd / Gathering patterns** (Zheng et al., *On Discovery of G
 
 The demo is for the final presentation, so it goes straight to the point. There is **one match** (`mock-2207-0001`) and **two pages** (`app/Home.py`, `st.navigation`), with no terminology recap:
 
-- **🎮 Trận đấu** (`app/views/match.py`): how the teams move. Follow up to 4 teams; the others are grey. Sections:
-  1. ① routes (squad-centre path, landing ●, ✖ / ★ end, time ticks);
-  2. ② replay with 60 s trails and a follow-a-team camera;
-  3. ③ **3D space-time cube** (x, y, t) with the Erangel map on the floor and gatherings as orange columns;
-  4. ④ rotation (route per phase, distance to the zone edge);
-  5. ⑤ encounters: a Gantt of the mined gatherings, one in 3D or 2D, and each team's outcome over the next 2 min.
+- **🎮 Trận đấu** (`app/views/match.py`): **value first**. A value-chain strip shows the flow: players → points → DBSCAN clusters → crowds → gatherings (mining, blue) → coach takeaways → VOD moments (value, orange). Below it are tabs:
+  1. 💡 **Kết luận cho HLV**: 4 cards from `src/analytics/coach.py`. Each card has a headline number, a "👉 HLV" action and the evidence gatherings (opens the encounter in 3D/2D). The cards cover:
+     - the cost of hot drops;
+     - the winner's route;
+     - the chokepoint trap;
+     - elimination rate inside vs outside gatherings.
+  2. 🎬 **VOD cần xem lại**: per team, the timestamps of every gathering it was in, with teams met, participators and outcome. Selecting a row replays it; CSV export.
+  3. 🗺️ Di chuyển: routes, replay with trails and follow camera, 3D x–y–t cube.
+  4. 🔄 Xoay bo.
+  5. ⚔️ Chạm trán: Gantt + encounter in 3D/2D.
 - **🔬 Thuật toán** (`app/views/algorithm.py`): the same match, step by step, with parameter sliders. A **3D x–y–t** view (default, like Fig. 1c of the paper / the old concert demo) or 2D. The steps are:
   1. ① trajectories;
   2. ② snapshot cluster discs;

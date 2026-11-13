@@ -29,6 +29,10 @@ def test_archive_page_runs(page):
     assert not at.exception, [e.value for e in at.exception]
 
 
+def _bg(at, key):
+    return next(b for b in at.get("button_group") if b.key == key)
+
+
 def test_match_page_focus_and_follow():
     at = routed("views/match.py")
     ms = at.multiselect[0]
@@ -36,6 +40,7 @@ def test_match_page_focus_and_follow():
     first = ms.value[0]
     ms.set_value([first]).run()
     assert not at.exception
+    _bg(at, "move_view").set_value("Replay").run()
     at.selectbox(key=next(s.key for s in at.selectbox if s.key and s.key.startswith("follow_"))).set_value(first).run()
     assert not at.exception, [e.value for e in at.exception]
 
@@ -59,11 +64,23 @@ def test_algorithm_2d_and_back():
 
 def test_match_cube_toggles_and_encounter_2d():
     at = routed("views/match.py")
+    _bg(at, "move_view").set_value("3D x–y–t").run()
     at.toggle(key="cube_others").set_value(False).run()
     at.toggle(key="cube_gath").set_value(False).run()
     assert not at.exception, [e.value for e in at.exception]
-    at.get("button_group")[0].set_value("2D").run()
+    _bg(at, "encm_enc").set_value("2D").run()
     assert not at.exception, [e.value for e in at.exception]
+
+
+def test_match_value_first_tabs_and_vod():
+    at = routed("views/match.py")
+    md = " ".join(m.value for m in at.markdown)
+    assert "kết luận cho HLV" in md and "card-big" in md and "👉" in md  # value chain + insight cards
+    sb = at.selectbox(key=next(s.key for s in at.selectbox if s.key and s.key.startswith("vod_team_")))
+    for team in sb.options[:3]:
+        sb.set_value(team.split(" · ")[0]).run()
+        assert not at.exception, [e.value for e in at.exception]
+    assert at.get("download_button"), "VOD CSV download missing"
 
 
 def test_algorithm_team_filter_and_per_player():

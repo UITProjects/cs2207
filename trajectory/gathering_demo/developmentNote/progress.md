@@ -98,3 +98,22 @@ User: "highlight colour which teams, support filter in teams too; I can't see ho
   - participators: a solid thick line for teams with participators, thin and dashed for teams that only passed through.
 - Algorithm page, every 3D tab: team multiselect "Đội (n đội trong vùng)" (defaults reset when the window changes), "Vẽ theo: Đội (tâm) | Từng người", and colour chips. "Nối quỹ đạo"/"Hiện nhiễu" appear only in per-player mode.
 - Tests: 47 passed (new: team colouring and filter, participators solid vs passing, app filter + per-player switch). Playwright: 0 exceptions; Georgopol crowd shows T05/T20/T24 in red/green/orange.
+
+## M4e — Coach value first: takeaways + VOD flags
+User: "where is the mining part and the insight… the business value that the coach can use to train players?" and "make the UI easy to present; end users want to see where the real value comes from".
+- New `src/analytics/coach.py`:
+  - `losses` (players lost during a gathering + 2 min, teams wiped);
+  - `match_insights`: 4 cards (hot_drop, winner_route, chokepoint, danger_rate). Each card has a big number, detail, 👉 HLV action, and evidence gathering ids;
+  - `vod_flags`: `team_report` + `annotate_zone` + teams met.
+  
+  On mock-2207-0001 the cards are:
+  - G1 Pochinki 11/20 lost, T22 wiped; early-gathering teams average rank 15.3 vs 10.1;
+  - T09 landed at Mylta, avoided hot drops, first fight West Bridge 11:10;
+  - G6 West Bridge 9/16 lost, T13 + T23 wiped;
+  - ×1.5 eliminations per player-minute inside gatherings.
+- Match page reorganised value-first:
+  - value-chain strip with live numbers (blue = mining, orange = value) + link to the algorithm page;
+  - tabs 💡 Kết luận cho HLV / 🎬 VOD cần xem lại / 🗺️ Di chuyển (Đường đi | Replay | 3D) / 🔄 Xoay bo / ⚔️ Chạm trán;
+  - `render_encounter` shared by the cards (evidence expander), VOD row selection and the encounter tab;
+  - CSS: `.vchain`, `.card-big`, `.advice`.
+- Tests: new `tests/test_coach.py` (4 insights with valid evidence, VOD flags sorted/empty, synthetic losses) + match page value/VOD test. **51 passed, ruff clean.** Playwright: 0 exceptions on all 5 tabs.

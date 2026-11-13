@@ -41,6 +41,21 @@ CSS = f"""<style>
 .badge {{ display: inline-block; border-radius: 6px; padding: 3px 10px; font-weight: bold; font-size: 13px;
           color: #fff; letter-spacing: .04em; }}
 .badge.mock {{ background: #8a5a00; }} .badge.real {{ background: #1f7a3a; }}
+.vchain {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 10px; }}
+.vchain .step {{ background: {PAPER}; border: 1px solid {LINE}; border-radius: 10px; padding: 6px 12px;
+                 line-height: 1.2; text-align: center; }}
+.vchain .step b {{ display: block; font-size: 22px; color: {INK}; }}
+.vchain .step span {{ font-size: 12px; color: #6B7080; }}
+.vchain .step.mine {{ border-color: #2D5F9A; background: {ICE}; }}
+.vchain .step.value {{ border-color: {RUST}; background: {PEACH}; }}
+.vchain .arrow {{ color: {RUST}; font-size: 20px; font-weight: bold; }}
+.card-title {{ font-size: 18px; font-weight: bold; color: {INK}; }}
+.card-big {{ font-size: 44px; font-weight: 800; color: {RUST}; line-height: 1.05; margin-top: 4px; }}
+.card-big small {{ font-size: 15px; font-weight: 600; color: #6B7080; margin-left: 6px; }}
+.card-detail {{ font-size: 15px; line-height: 1.5; margin: 6px 0; }}
+.advice {{ background: {PEACH}; border-left: 5px solid {RUST}; border-radius: 6px; padding: 8px 12px;
+           font-size: 15px; line-height: 1.45; margin: 6px 0; }}
+.evidence {{ font-size: 13px; color: #6B7080; }}
 </style>"""
 
 
