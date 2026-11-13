@@ -80,12 +80,12 @@ def test_result_page_is_trajectory_only():
     assert len(at.tabs) == 2
 
 
-def test_algorithm_team_filter_and_per_player():
+def test_algorithm_team_filter_per_player():
     at = routed("views/algorithm.py")
     ms = at.multiselect[0]
     assert len(ms.value) >= 2
     ms.set_value(ms.value[:1]).run()
     assert not at.exception, [e.value for e in at.exception]
-    by = next(b for b in at.get("button_group") if b.key == "by_raw")
-    by.set_value("Từng người").run()
+    assert not any(b.key and b.key.startswith("by_") for b in at.get("button_group"))  # always per player
+    at.toggle(key="conn_raw").set_value(False).run()
     assert not at.exception, [e.value for e in at.exception]

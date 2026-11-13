@@ -78,26 +78,19 @@ def window_row(key: str) -> tuple[tuple, float, float, int | None]:
     return view, lo, hi, pick
 
 
-BY_TEAM, BY_PLAYER = "Đội (tâm)", "Từng người"
-
-
 def team_row(key: str, view, lo: float, hi: float, noise_toggle: bool = False) -> dict:
-    """Team filter + team-centre / per-player switch. Returns kwargs for _cube (teams, by, colors, noise, connect)."""
+    """Team filter; trajectories are always drawn per player in the team colour. Returns kwargs for _cube."""
     wt = window_teams(pos, view, lo, hi)
     colors = team_palette(wt)
-    a, b, c_ = st.columns([4, 2, 1.4])
+    a, c_ = st.columns([5, 1.4])
     wkey = f"{key}_{int(view[0])}_{int(view[1])}_{int(lo)}_{int(hi)}"  # new window → defaults reset
     teams = a.multiselect(f"Đội ({len(wt)} đội trong vùng)", wt, default=wt, key=f"teams_{wkey}")
-    by = b.segmented_control("Vẽ theo", [BY_TEAM, BY_PLAYER], default=BY_TEAM, key=f"by_{key}") or BY_TEAM
-    connect, noise = True, False
-    if by == BY_PLAYER:
-        connect = c_.toggle("Nối quỹ đạo", value=True, key=f"conn_{key}")
-        if noise_toggle:
-            noise = c_.toggle("Hiện nhiễu", value=False, key=f"noise_{key}")
+    connect = c_.toggle("Nối quỹ đạo", value=True, key=f"conn_{key}")
+    noise = c_.toggle("Hiện nhiễu", value=False, key=f"noise_{key}") if noise_toggle else False
     if teams:
         st.markdown(" ".join(f'<span class="badge" style="background:{colors[tm]}">{tm}</span>' for tm in teams),
                     unsafe_allow_html=True)
-    return dict(teams=tuple(teams), by="team" if by == BY_TEAM else "player", colors=tuple(sorted(colors.items())),
+    return dict(teams=tuple(teams), by="player", colors=tuple(sorted(colors.items())),
                 noise=noise, connect=connect)
 
 
