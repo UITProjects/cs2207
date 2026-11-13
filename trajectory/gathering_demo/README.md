@@ -2,17 +2,24 @@
 
 This demo mines **Crowd / Gathering patterns** (Zheng et al., *On Discovery of Gathering Patterns from Trajectories*, ICDE 2013) from PUBG squad matches on Erangel. It ships as a multipage **Streamlit** app (Vietnamese UI) that runs fully offline from the committed sample in `data/sample/`.
 
-The menu (`app/Home.py`, `st.navigation`) has three pages, in presentation order. The story is "analyse how the teams of one (tournament-style) match move":
+The demo is for the final presentation, so it goes straight to the point. There is **one match** (`mock-2207-0001`) and **two pages** (`app/Home.py`, `st.navigation`), with no terminology recap:
 
-- **🏠 Giới thiệu**: the problem, the four definitions (cluster → crowd → participator → gathering), the pipeline and the limitations.
-- **🎮 Phân tích trận** (`app/views/match.py`): one match, focused on movement. Pick up to 4 teams to follow; the others are grey. It has four views:
-  1. team routes (squad-centre path, landing ●, elimination ✖ / alive ★, time ticks);
-  2. a replay with 60 s trails, recent kills and an optional follow-a-team camera;
-  3. rotation: a route-per-phase table plus distance to the zone edge over time;
-  4. encounters: a timeline of the mined gatherings, one zoomed on the map, and what happened to each team in the next 2 min.
-- **🔬 Thuật toán từng bước** (`app/views/algorithm.py`): the same match, algorithm step by step (trajectories → DBSCAN snapshot clusters → crowds (Alg. 1, Hausdorff) → gatherings (Test-and-Divide)), with parameter sliders.
+- **🎮 Trận đấu** (`app/views/match.py`): how the teams move. Follow up to 4 teams; the others are grey. Sections:
+  1. ① routes (squad-centre path, landing ●, ✖ / ★ end, time ticks);
+  2. ② replay with 60 s trails and a follow-a-team camera;
+  3. ③ **3D space-time cube** (x, y, t) with the Erangel map on the floor and gatherings as orange columns;
+  4. ④ rotation (route per phase, distance to the zone edge);
+  5. ⑤ encounters: a Gantt of the mined gatherings, one in 3D or 2D, and each team's outcome over the next 2 min.
+- **🔬 Thuật toán** (`app/views/algorithm.py`): the same match, step by step, with parameter sliders. A **3D x–y–t** view (default, like Fig. 1c of the paper / the old concert demo) or 2D. The steps are:
+  1. ① trajectories;
+  2. ② snapshot cluster discs;
+  3. ③ crowds with dashed d_H links;
+  4. ④ TAD, with participators in orange and gathering clusters in blue.
 
-The match shown first is `app.showcase_match` in `config.yaml`. The multi-match pages (Data Explorer, Insights, Coach View, Sensitivity) are kept in `app/archive/`. They are no longer in the menu but are still smoke-tested and can be run alone (`streamlit run app/archive/3_Insights.py`).
+  The 3D views are drawn by `src/viz/cube.py`.
+
+Recap and multi-match pages (intro, Data Explorer, Insights, Coach View, Sensitivity) are kept in `app/archive/` and are still smoke-tested.
+
 - Data comes from a **mock simulator** that emits the exact PUBG API JSON shapes. The **real PUBG API** source is ready and switches on once a key is set (`DATASOURCE=pubg`).
 
 Served at `https://cs2207.datrollout.dev/trajectory/gathering/`. The previous concert demo lives in `legacy/`.
@@ -39,7 +46,9 @@ uv run python scripts/build_sample.py --n 30 --source mock             # data/sa
 uv run streamlit run app/Home.py
 ```
 
-The app reads `data/processed/{source}` when it exists and falls back to the committed `data/sample/{source}` otherwise. It never calls the API.
+The app reads `data/processed/{source}` when it exists and falls back to the committed `data/sample/{source}` otherwise. It never calls the API. With a single match, the sidebar shows no picker.
+
+**One match only:** the committed sample holds just `mock-2207-0001` (`build_sample.py --match mock-2207-0001`). The local processed/interim folders were trimmed to that same match. To get all 50 mock matches back, run the pipeline above: `data/raw/mock` is kept, and the crawl is deterministic.
 
 Other helper scripts:
 
@@ -63,8 +72,9 @@ src/preprocess/clean.py     landing/death cut, outlier filter, Δt resampling (g
 src/mining/                 snapshot (DBSCAN), hausdorff (+bbox lower bound), crowd (Alg. 1), gathering (TAD), pipeline
 src/analytics/              gazetteer, hotspots, outcomes, zone, team_report, aggregate
 src/viz/map_plot.py         Plotly map (meters, reversed y), animations, hulls, zone circles
+src/viz/cube.py             3D space-time cube (x, y, t): textured map floor, disc meshes, team/algorithm cubes
 src/analytics/movement.py   team tracks (squad centre), rotation summary, distance to the zone edge
-app/Home.py                 router: app/views/{intro,match,algorithm}.py; app/archive/* = multi-match pages
+app/Home.py                 router: app/views/{match,algorithm}.py; app/archive/* = recap + multi-match pages
 docs/schema.md              PUBG response shapes (UNVERIFIED items get checked at M8)
 ```
 

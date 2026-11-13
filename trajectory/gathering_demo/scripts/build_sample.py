@@ -2,6 +2,7 @@
 and precompute multi-match aggregates at the default parameters (data/sample/{source}/_aggregates/).
 
     uv run python scripts/build_sample.py --n 30 [--source mock]
+    uv run python scripts/build_sample.py --match mock-2207-0001     # exactly these match(es)
 """
 from __future__ import annotations
 
@@ -31,13 +32,20 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--source", default=None)
+    ap.add_argument("--match", action="append", default=None, help="keep exactly these match ids (repeatable)")
     a = ap.parse_args()
     src = a.source or datasource_name()
     src_dir = path("processed") / src
     out = path("sample") / ("real" if src == "pubg" else src)
     params = default_params()
     dirs = sorted(d for d in src_dir.iterdir() if (d / "meta.json").exists())
-    ranked = sorted(dirs, key=lambda d: -score(d, params))[: a.n]
+    if a.match:
+        ranked = [d for d in dirs if d.name in set(a.match)]
+        missing = set(a.match) - {d.name for d in ranked}
+        if missing:
+            sys.exit(f"not found in {src_dir}: {sorted(missing)}")
+    else:
+        ranked = sorted(dirs, key=lambda d: -score(d, params))[: a.n]
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)

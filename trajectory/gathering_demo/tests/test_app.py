@@ -7,7 +7,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).resolve().parents[1] / "app"
-VIEWS = ["views/intro.py", "views/match.py", "views/algorithm.py"]  # in the menu (app/Home.py router)
+VIEWS = ["views/match.py", "views/algorithm.py"]  # in the menu (app/Home.py router)
 ARCHIVE = sorted(f"archive/{p.name}" for p in (APP / "archive").glob("*.py"))  # kept, not in the menu
 
 
@@ -47,3 +47,20 @@ def test_algorithm_param_change():
     assert not at.exception
     at.button[0].click().run()  # reset to defaults
     assert not at.exception and at.slider(key="p_m_c").value == 8
+
+
+def test_algorithm_2d_and_back():
+    at = routed("views/algorithm.py")
+    at.get("button_group")[0].set_value("🗺️ 2D").run()
+    assert not at.exception, [e.value for e in at.exception]
+    at.get("button_group")[0].set_value("🧊 3D x–y–t").run()  # re-fetch: the widget tree changed
+    assert not at.exception, [e.value for e in at.exception]
+
+
+def test_match_cube_toggles_and_encounter_2d():
+    at = routed("views/match.py")
+    at.toggle(key="cube_others").set_value(False).run()
+    at.toggle(key="cube_gath").set_value(False).run()
+    assert not at.exception, [e.value for e in at.exception]
+    at.get("button_group")[0].set_value("2D").run()
+    assert not at.exception, [e.value for e in at.exception]

@@ -96,7 +96,6 @@ st.markdown("""
 - **🔬 Thuật toán từng bước** — cùng trận đó, chạy thuật toán từng bước: quỹ đạo → cụm → crowd → gathering.
   Kéo tham số ở thanh bên để thấy kết quả đổi theo.
 """)
-st.page_link("views/match.py", label="Bắt đầu: Phân tích trận →", icon="🎮")
 
 st.header("4 · Nguồn dữ liệu & giới hạn")
 if ctx["source"] == "mock":

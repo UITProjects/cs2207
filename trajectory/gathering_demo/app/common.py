@@ -128,15 +128,23 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
         st.stop()
     names = list(srcs)
     default = "real" if "real" in srcs else names[0]
-    src = st.sidebar.selectbox("Nguồn dữ liệu", names, index=names.index(st.session_state.get("source", default))
-                               if st.session_state.get("source", default) in names else 0, key="source",
-                               format_func=lambda s: SOURCE_LABEL.get(s, s))
+    if len(names) == 1:
+        src = names[0]
+    else:
+        src = st.sidebar.selectbox("Nguồn dữ liệu", names, index=names.index(st.session_state.get("source", default))
+                                   if st.session_state.get("source", default) in names else 0, key="source",
+                                   format_func=lambda s: SOURCE_LABEL.get(s, s))
     cls = "real" if src in ("real", "pubg") else "mock"
     st.sidebar.markdown(f'<span class="badge {cls}">{SOURCE_LABEL.get(src, src)}</span>', unsafe_allow_html=True)
     folder = str(srcs[src])
     mt = match_table(folder)
     out = dict(source=src, folder=folder, matches=mt, match_id=None, params=default_params(), meta=None)
-    if match_picker and len(mt):
+    if len(mt) == 1:  # the demo ships one match: no picker, just what it is
+        r = mt.iloc[0]
+        out["match_id"], out["meta"] = r["match_id"], r.to_dict()
+        st.sidebar.caption(f"`{r['match_id']}` · Erangel · {r['gameMode']} · {r['n_teams']} đội · "
+                           f"{int(r['duration']) // 60}:{int(r['duration']) % 60:02d}")
+    elif match_picker and len(mt):
         ids = list(mt["match_id"])
         short = lambda m: m if len(m) <= 16 else "…" + m[-10:]  # noqa: E731
         lab = {r.match_id: f"{short(r.match_id)} · {str(r.createdAt)[:10]} · {r.gameMode}"
@@ -147,7 +155,7 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
             cur = showcase_match() if showcase_match() in ids else ids[0]
         if st.session_state.get("match_id") not in ids:
             st.session_state["match_id"] = cur
-        mid = st.sidebar.selectbox("Trận đấu (★ = trận mẫu)", ids, format_func=lambda m: lab[m], key="match_id")
+        mid = st.sidebar.selectbox("Trận", ids, format_func=lambda m: lab[m], key="match_id")
         st.session_state["_match_id"] = mid
         out["match_id"] = mid
         out["meta"] = mt.set_index("match_id").loc[mid].to_dict()

@@ -25,7 +25,8 @@ SWEEP = {"eps": [75, 100, 125, 150, 175, 200, 250, 300], "delta": [100, 150, 200
          "m_p": [3, 4, 5, 6, 7, 8], "min_pts": [2, 3, 4, 5, 6]}
 a, b = st.columns([1, 1])
 key = a.selectbox("Tham số", list(SWEEP), index=1, format_func=lambda k: common.PARAM_UI[k][0])
-n_m = b.slider("Số trận", 1, min(5, len(ctx["matches"])), 1, help="Trận đang chọn + các trận kế tiếp")
+n_max = min(5, len(ctx["matches"]))
+n_m = b.slider("Số trận", 1, n_max, 1, help="Trận đang chọn + các trận kế tiếp") if n_max > 1 else 1
 
 
 @st.cache_data(show_spinner="Đang quét…", max_entries=16)

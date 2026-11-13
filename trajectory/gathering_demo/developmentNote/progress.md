@@ -75,3 +75,15 @@ User feedback: the app was hard to read (all 100 trajectories at once, multi-mat
 - `src/viz/map_plot.py`: `base_map(dim=…)`, `place_labels`, `team_routes` (grey others + up to 4 coloured focus teams, ● landing, ✖ / ★ end, 3-min ticks), `replay` (grey dots, focus dots + 60 s trails, recent kills, follow-a-team camera; starts once ≥ 50% have landed; ~1.2 MB JSON, ~3 s to build, cached), `_play_controls` shared with `animation`.
 - Match page: header + focus multiselect → ① routes + one sentence per team → ② replay (follow, speed) → ③ rotation table (focus rows highlighted) + zone-edge distance chart → ④ gathering Gantt (★ = focus team involved) + a zoomed encounter map + outcome per team in the next 2 min + link to the algorithm page.
 - Tests: `tests/test_app.py` runs the views through the router (`switch_page`) and the archive pages standalone, plus a focus/follow interaction test. New `tests/test_movement.py` (synthetic 2-team match). **35 passed, ruff clean.** Playwright Chrome: 0 exceptions on all 3 pages; the replay plays and follow mode moves the camera (T09 Mylta → West Bridge at 15:00).
+
+## M4c — Final-presentation cut: one match, no recap, 3D time axis (2026-11-13 night)
+User feedback: "make the web more simple … users already know the terminology … straight to the point", "only one match", and "it is missing the third dimension, Time, like the old gathering project".
+- **One match:** `data/sample/mock` now holds only `mock-2207-0001` + `_aggregates` (0.2 MB; 29 matches git-removed). `data/processed/mock` and `data/interim/mock` were trimmed to the same match (local). `data/raw/mock` is kept for regeneration. `build_sample.py --match <id>`. Sidebar: no source/match picker when there is only one option; it shows one info line.
+- **No recap:** the menu has 2 pages, 🎮 Trận đấu (default) and 🔬 Thuật toán. The intro moved to `app/archive/0_Intro.py`. Explanation boxes and textbook verdicts were removed; short captions with the parameter values remain.
+- **3D (x, y, t):** new `src/viz/cube.py`.
+  - `map_floor`: Erangel texture on a Surface. The scalar is brightness and the colour scale is the mean colour per brightness band, because palette indices produced noise when Plotly interpolated them. The z background is turned off and placed below the floor to avoid z-fighting.
+  - `space_time_cube`: lines, discs merged into one Mesh3d per colour, dashed links, points, labels, optional t-planes, y reversed, camera from the south.
+  - `team_cube` (match page ③, plus ⑤ encounter 3D/2D switch).
+  - `algo_cube` + `crowd_window` (algorithm page: 3D default, 2D switch). Tabs: raw / cluster discs / crowd colours + d_H links / participators orange + gathering clusters blue.
+  - Each cube is 0.6–1 MB of JSON and builds in under 0.25 s.
+- Tests: new `tests/test_cube.py` (floor, disc merge, 4 algo modes, team cube); `test_app.py` updated (2 views, 3D↔2D switch, cube toggles, encounter 2D). **44 passed, ruff clean.** Playwright Chrome: 0 exceptions on both pages; cube floor readable (Pochinki label reads correctly, not mirrored).
