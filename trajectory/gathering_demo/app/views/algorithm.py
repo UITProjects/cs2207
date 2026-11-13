@@ -1,4 +1,4 @@
-"""🔬 Step-by-step — quỹ đạo → cụm → crowd → gathering trên một trận (luồng của demo cũ)."""
+"""🔬 Thuật toán từng bước — quỹ đạo → cụm → crowd → gathering trên một trận (luồng của demo cũ)."""
 from __future__ import annotations
 
 import sys
@@ -23,7 +23,7 @@ from src.viz.map_plot import (  # noqa: E402
     zoom_box,
 )
 
-common.page("Step-by-step", "🔬")
+common.page("Thuật toán từng bước", "🔬")
 ctx = common.sidebar()
 P = ctx["params"]
 t = common.load_match(ctx["folder"], ctx["match_id"])
@@ -31,7 +31,7 @@ res = common.mine(ctx["folder"], ctx["match_id"], common.params_key(P))
 pos, zones = t["positions"], t["zones"]
 src = common.caption_source(ctx)
 
-st.title("🔬 Step-by-step")
+st.title("🔬 Thuật toán từng bước")
 st.markdown(f"{src} trận `{ctx['match_id']}` · eps={P['eps']} m · min_pts={P['min_pts']} · m_c={P['m_c']} · "
             f"δ={P['delta']} m · k_c={P['k_c']} · k_p={P['k_p']} · m_p={P['m_p']}")
 c = st.columns(4)

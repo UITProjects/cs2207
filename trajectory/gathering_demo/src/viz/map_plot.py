@@ -30,16 +30,188 @@ def team_color(team: str) -> str:
     return TEAM_COLORS[(int(team[1:]) - 1) % len(TEAM_COLORS)]
 
 
-def base_map(height: int = 640, view: tuple[float, float, float, float] | None = None) -> go.Figure:
-    """Empty figure with the map image under data in meters. view = (x0, y0, x1, y1)."""
+def base_map(height: int = 640, view: tuple[float, float, float, float] | None = None, dim: float = 0.0) -> go.Figure:
+    """Empty figure with the map image under data in meters. view = (x0, y0, x1, y1).
+    dim in [0, 1) darkens the map (image opacity 1 - dim over a dark background) so lines stand out."""
     x0, y0, x1, y1 = view or (0, 0, MAP_M, MAP_M)
     fig = go.Figure()
     fig.add_layout_image(source=map_source(), xref="x", yref="y", x=0, y=0, sizex=MAP_M, sizey=MAP_M,
-                         sizing="stretch", layer="below", opacity=1.0)
+                         sizing="stretch", layer="below", opacity=1.0 - dim)
     fig.update_xaxes(range=[x0, x1], showgrid=False, zeroline=False, constrain="domain", title=None)
     fig.update_yaxes(range=[y1, y0], showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1, title=None)
-    fig.update_layout(height=height, margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor="#0b2a3a",
+    fig.update_layout(height=height, margin=dict(l=0, r=0, t=30, b=0), plot_bgcolor="#05121a" if dim else "#0b2a3a",
                       legend=dict(bgcolor="rgba(255,255,255,0.75)", font=dict(size=10)), dragmode="pan")
+    return fig
+
+
+# ---------------- team movement (one match) ----------------
+FOCUS_COLORS = ["#ff3b30", "#2f8cff", "#ffd60a", "#34c759"]
+OTHER_COLORS = ["#ff924c", "#c77dff", "#00f5d4", "#f15bb5", "#c5ca30", "#a0c4ff", "#ffadad", "#bdb2ff",
+                "#9bf6ff", "#fdffb6", "#caffbf", "#ffc6ff"]
+GREY = "rgba(235,235,235,0.55)"
+TEXT_SHADOW = "1px 1px 2px black, -1px -1px 2px black"
+
+
+def place_labels(fig: go.Figure, size: int = 10) -> None:
+    """Small white place names (assets/erangel_places.yaml) on top of the map."""
+    from src.analytics.gazetteer import places
+
+    ps = places()
+    fig.add_trace(go.Scatter(x=[p["x"] for p in ps], y=[p["y"] for p in ps], mode="text",
+                             text=[p["name"] for p in ps], hoverinfo="skip", showlegend=False,
+                             textfont=dict(color="rgba(255,255,255,0.85)", size=size, shadow=TEXT_SHADOW)))
+
+
+def _broken_line(df: pd.DataFrame, gap: float = 10.5) -> tuple[list, list]:
+    """x/y lists with None where consecutive rows are more than `gap` seconds apart."""
+    xs: list = []
+    ys: list = []
+    prev = None
+    for t, x, y in zip(df["t"], df["x"], df["y"], strict=True):
+        if prev is not None and t - prev > gap:
+            xs.append(None)
+            ys.append(None)
+        xs.append(x)
+        ys.append(y)
+        prev = t
+    return xs, ys
+
+
+def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], colors: dict[str, str],
+                zones: pd.DataFrame | None = None, height: int = 760, tick_s: int = 180) -> go.Figure:
+    """Squad-centre path of every team: grey for the others, thick colour for `focus` teams with a landing
+    marker (●), an end marker (✖ eliminated / ★ alive at the end) and time ticks every `tick_s` seconds."""
+    fig = base_map(height, dim=0.45)
+    place_labels(fig)
+    xs, ys = [], []
+    for team, tr in tracks.groupby("team"):
+        if team in focus:
+            continue
+        x, y = _broken_line(tr)
+        xs += x + [None]
+        ys += y + [None]
+    fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=GREY, width=1.5), name="các đội khác",
+                             hoverinfo="skip"))
+    info = summary.set_index("team")
+    for team in focus:
+        tr = tracks[tracks["team"] == team]
+        if tr.empty:
+            continue
+        col = colors[team]
+        r = info.loc[team]
+        x, y = _broken_line(tr)
+        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=col, width=4), name=f"{team} · hạng {r['rank']}",
+                                 hoverinfo="name"))
+        ticks = tr[(tr["t"] % tick_s) < 10]
+        keep, last = [], None  # skip a tick that would sit on top of the previous one (team standing still)
+        for i, rr in ticks.iterrows():
+            if last is None or np.hypot(rr.x - last[0], rr.y - last[1]) > 250:
+                keep.append(i)
+                last = (rr.x, rr.y)
+        ticks = ticks.loc[keep]
+        fig.add_trace(go.Scatter(x=ticks["x"], y=ticks["y"], mode="markers+text", showlegend=False,
+                                 marker=dict(size=6, color=col, line=dict(width=1, color="black")),
+                                 text=[fmt_t(t) for t in ticks["t"]], textposition="top right",
+                                 textfont=dict(color="white", size=9, shadow=TEXT_SHADOW),
+                                 hovertext=[f"{team} · {fmt_t(t)}" for t in ticks["t"]], hoverinfo="text"))
+        a, b = tr.iloc[0], tr.iloc[-1]
+        fig.add_trace(go.Scatter(x=[a.x], y=[a.y], mode="markers", showlegend=False, hoverinfo="text",
+                                 hovertext=f"{team} tiếp đất {fmt_t(a.t)} · {r['land_place']}",
+                                 marker=dict(size=15, color=col, symbol="circle", line=dict(width=2.5, color="white"))))
+        sym = "star" if r["survived"] else "x"
+        fig.add_trace(go.Scatter(x=[b.x], y=[b.y], mode="markers", showlegend=False, hoverinfo="text",
+                                 hovertext=f"{team} {'còn sống cuối trận' if r['survived'] else 'bị loại'} "
+                                           f"{fmt_t(r['out_t'])} · {r['out_place']}",
+                                 marker=dict(size=20 if sym == "star" else 16, color=col, symbol=sym,
+                                             line=dict(width=2, color="white"))))
+    if zones is not None and len(zones):
+        z = zones.iloc[-1]
+        fig.update_layout(shapes=[circle(z.safe_x, z.safe_y, z.safe_r, "#4aa3ff", dash="dot", width=2)])
+    fig.update_layout(legend=dict(orientation="h", y=1.0, x=0, yanchor="bottom", bgcolor="rgba(255,255,255,0.85)",
+                                  font=dict(size=12)), margin=dict(l=0, r=0, t=40, b=0))
+    return fig
+
+
+def _play_controls(fig: go.Figure, times: list, frame_ms: int) -> None:
+    fig.update_layout(
+        updatemenus=[dict(type="buttons", showactive=False, x=0.01, y=0.01, xanchor="left", yanchor="bottom",
+                          buttons=[dict(label="▶ Play", method="animate",
+                                        args=[None, dict(frame=dict(duration=frame_ms, redraw=True), fromcurrent=True,
+                                                         transition=dict(duration=0))]),
+                                   dict(label="⏸", method="animate",
+                                        args=[[None], dict(frame=dict(duration=0, redraw=False), mode="immediate")])])],
+        sliders=[dict(active=0, y=-0.02, len=0.9, x=0.08, currentvalue=dict(prefix="t = "),
+                      steps=[dict(label=fmt_t(t), method="animate",
+                                  args=[[str(t)], dict(mode="immediate", frame=dict(duration=0, redraw=True))])
+                             for t in times])])
+
+
+def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, kills: pd.DataFrame | None, focus: list[str],
+           colors: dict[str, str], trail_steps: int = 6, follow: str | None = None, follow_half: float = 700,
+           height: int = 760, frame_ms: int = 250, max_frames: int = 300) -> go.Figure:
+    """Animated replay: other players as small grey dots, focus teams as big coloured dots with a tail of
+    the last `trail_steps` positions, recent kills (≤ 30 s) as ✖. `follow` keeps the view on one team."""
+    counts = pos.groupby("t").size()
+    start = counts.index[counts >= 0.5 * counts.max()].min() if len(counts) else 0  # skip the near-empty drop
+    times = [t for t in sorted(pos["t"].unique()) if t >= start]
+    if len(times) > max_frames:
+        times = times[:: int(np.ceil(len(times) / max_frames))]
+    dt = float(np.median(np.diff(times))) if len(times) > 1 else 10.0
+    by_t = {t: g for t, g in pos.groupby("t")}
+    fpos = pos[pos["team"].isin(focus)].sort_values(["player", "t"])
+    kills = kills if kills is not None else pd.DataFrame(columns=["t", "x", "y", "victim", "victim_team"])
+    centre = pos[pos["team"] == follow].groupby("t")[["x", "y"]].mean() if follow else None
+
+    def frame_data(t):
+        g = by_t.get(t, pos.iloc[0:0])
+        o = g[~g["team"].isin(focus)]
+        out = [go.Scatter(x=o["x"], y=o["y"], mode="markers", hoverinfo="text", text=o["player"] + " · " + o["team"],
+                          marker=dict(size=6, color="rgba(235,235,235,0.75)", line=dict(width=0.5, color="black")),
+                          showlegend=False)]
+        win = fpos[(fpos["t"] > t - trail_steps * dt - 0.5) & (fpos["t"] <= t)]
+        for team in focus:
+            w = win[win["team"] == team]
+            xs, ys = [], []
+            for _, p in w.groupby("player"):
+                x, y = _broken_line(p, gap=dt + 0.5)
+                xs += x + [None]
+                ys += y + [None]
+            out.append(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=colors[team], width=3), opacity=0.6,
+                                  hoverinfo="skip", showlegend=False))
+            now = g[g["team"] == team]
+            out.append(go.Scatter(x=now["x"], y=now["y"], mode="markers", hoverinfo="text",
+                                  text=now["player"] + " · " + team, showlegend=False,
+                                  marker=dict(size=12, color=colors[team], line=dict(width=1.5, color="white"))))
+        k = kills[(kills["t"] > t - 30) & (kills["t"] <= t)]
+        out.append(go.Scatter(x=k["x"], y=k["y"], mode="markers", hoverinfo="text", showlegend=False,
+                              text=[f"✖ {v} ({vt})" for v, vt in zip(k["victim"], k["victim_team"], strict=True)],
+                              marker=dict(size=13, symbol="x", color="#ff2d55", line=dict(width=1, color="white"))))
+        return out
+
+    last_view = [None]
+
+    def frame_layout(t) -> dict:
+        lay = dict(shapes=zone_shapes(zones, t), title=f"t = {fmt_t(t)} · còn {len(by_t.get(t, []))} người")
+        if centre is not None and len(centre):
+            if t in centre.index:
+                c = centre.loc[t]
+                last_view[0] = zoom_box(c.x, c.y, follow_half, pad=1.0, min_half=follow_half)
+            v = last_view[0] or zoom_box(*centre.iloc[0], follow_half, pad=1.0, min_half=follow_half)
+            lay["xaxis"] = dict(range=[v[0], v[2]])
+            lay["yaxis"] = dict(range=[v[3], v[1]])
+        return lay
+
+    fig = base_map(height, dim=0.3)
+    place_labels(fig, size=11)
+    n_static = len(fig.data)
+    t0 = times[0] if times else 0
+    for tr in frame_data(t0):
+        fig.add_trace(tr)
+    fig.update_layout(**frame_layout(t0))
+    idx = list(range(n_static, len(fig.data)))
+    fig.frames = [go.Frame(data=frame_data(t), traces=idx, name=str(t), layout=go.Layout(**frame_layout(t)))
+                  for t in times]
+    _play_controls(fig, times, frame_ms)
     return fig
 
 
@@ -137,15 +309,5 @@ def animation(pos: pd.DataFrame, zones: pd.DataFrame | None, times: list[int] | 
     fig.update_layout(shapes=zone_shapes(zones, t0), title=f"t = {fmt_t(t0)}")
     fig.frames = [go.Frame(data=[data_at(t)], name=str(t),
                            layout=go.Layout(shapes=zone_shapes(zones, t), title=f"t = {fmt_t(t)}")) for t in times]
-    fig.update_layout(
-        updatemenus=[dict(type="buttons", showactive=False, x=0.01, y=0.01, xanchor="left", yanchor="bottom",
-                          buttons=[dict(label="▶ Play", method="animate",
-                                        args=[None, dict(frame=dict(duration=frame_ms, redraw=True), fromcurrent=True,
-                                                         transition=dict(duration=0))]),
-                                   dict(label="⏸", method="animate",
-                                        args=[[None], dict(frame=dict(duration=0, redraw=False), mode="immediate")])])],
-        sliders=[dict(active=0, y=-0.02, len=0.9, x=0.08, currentvalue=dict(prefix="t = "),
-                      steps=[dict(label=fmt_t(t), method="animate",
-                                  args=[[str(t)], dict(mode="immediate", frame=dict(duration=0, redraw=True))])
-                             for t in times])])
+    _play_controls(fig, times, frame_ms)
     return fig

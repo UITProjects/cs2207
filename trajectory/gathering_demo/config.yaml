@@ -22,6 +22,10 @@ preprocess:
   max_gap_s: 30            # interpolate gaps up to this only
   max_speed_foot: 60       # m/s outlier filter when not in a vehicle
 
+# App: match shown first on the match / algorithm pages (falls back to the first match)
+app:
+  showcase_match: mock-2207-0001
+
 # Default mining parameters (meters, steps of dt)
 params:
   eps: 150

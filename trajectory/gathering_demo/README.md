@@ -2,9 +2,17 @@
 
 This demo mines **Crowd / Gathering patterns** (Zheng et al., *On Discovery of Gathering Patterns from Trajectories*, ICDE 2013) from PUBG squad matches on Erangel. It ships as a multipage **Streamlit** app (Vietnamese UI) that runs fully offline from the committed sample in `data/sample/`.
 
-- **Step-by-step**: trajectories → DBSCAN snapshot clusters → crowds (Alg. 1, Hausdorff) → gatherings (Test-and-Divide).
-- **Insights**: hotspots by phase, top chokepoints, elimination rate inside gatherings vs a same-window baseline.
-- **Coach View**: route-risk sentence for a phase and place, plus a VOD timestamp report for one team (CSV export).
+The menu (`app/Home.py`, `st.navigation`) has three pages, in presentation order. The story is "analyse how the teams of one (tournament-style) match move":
+
+- **🏠 Giới thiệu**: the problem, the four definitions (cluster → crowd → participator → gathering), the pipeline and the limitations.
+- **🎮 Phân tích trận** (`app/views/match.py`): one match, focused on movement. Pick up to 4 teams to follow; the others are grey. It has four views:
+  1. team routes (squad-centre path, landing ●, elimination ✖ / alive ★, time ticks);
+  2. a replay with 60 s trails, recent kills and an optional follow-a-team camera;
+  3. rotation: a route-per-phase table plus distance to the zone edge over time;
+  4. encounters: a timeline of the mined gatherings, one zoomed on the map, and what happened to each team in the next 2 min.
+- **🔬 Thuật toán từng bước** (`app/views/algorithm.py`): the same match, algorithm step by step (trajectories → DBSCAN snapshot clusters → crowds (Alg. 1, Hausdorff) → gatherings (Test-and-Divide)), with parameter sliders.
+
+The match shown first is `app.showcase_match` in `config.yaml`. The multi-match pages (Data Explorer, Insights, Coach View, Sensitivity) are kept in `app/archive/`. They are no longer in the menu but are still smoke-tested and can be run alone (`streamlit run app/archive/3_Insights.py`).
 - Data comes from a **mock simulator** that emits the exact PUBG API JSON shapes. The **real PUBG API** source is ready and switches on once a key is set (`DATASOURCE=pubg`).
 
 Served at `https://cs2207.datrollout.dev/trajectory/gathering/`. The previous concert demo lives in `legacy/`.
@@ -55,7 +63,8 @@ src/preprocess/clean.py     landing/death cut, outlier filter, Δt resampling (g
 src/mining/                 snapshot (DBSCAN), hausdorff (+bbox lower bound), crowd (Alg. 1), gathering (TAD), pipeline
 src/analytics/              gazetteer, hotspots, outcomes, zone, team_report, aggregate
 src/viz/map_plot.py         Plotly map (meters, reversed y), animations, hulls, zone circles
-app/Home.py, app/pages/*    Streamlit pages
+src/analytics/movement.py   team tracks (squad centre), rotation summary, distance to the zone edge
+app/Home.py                 router: app/views/{intro,match,algorithm}.py; app/archive/* = multi-match pages
 docs/schema.md              PUBG response shapes (UNVERIFIED items get checked at M8)
 ```
 

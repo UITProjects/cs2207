@@ -107,9 +107,16 @@ def load_aggregates(folder: str) -> dict | None:
 
 
 # ---------------- sidebar ----------------
+def showcase_match() -> str | None:
+    from src.config import load_config
+
+    return (load_config().get("app") or {}).get("showcase_match")
+
+
 def _reset_params() -> None:
     for k, v in default_params().items():
         st.session_state[f"p_{k}"] = v
+    st.session_state["_params"] = default_params()
 
 
 def sidebar(match_picker: bool = True, params: bool = True) -> dict:
@@ -132,14 +139,23 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
     if match_picker and len(mt):
         ids = list(mt["match_id"])
         short = lambda m: m if len(m) <= 16 else "…" + m[-10:]  # noqa: E731
-        lab = {r.match_id: f"{short(r.match_id)} · {str(r.createdAt)[:10]} · {r.gameMode}" for r in mt.itertuples()}
-        mid = st.sidebar.selectbox("Trận đấu", ids, format_func=lambda m: lab[m], key="match_id")
+        lab = {r.match_id: f"{short(r.match_id)} · {str(r.createdAt)[:10]} · {r.gameMode}"
+               + (" ★" if r.match_id == showcase_match() else "") for r in mt.itertuples()}
+        # widget keys are dropped on pages that don't render them, so remember the choice separately
+        cur = st.session_state.get("_match_id")
+        if cur not in ids:
+            cur = showcase_match() if showcase_match() in ids else ids[0]
+        if st.session_state.get("match_id") not in ids:
+            st.session_state["match_id"] = cur
+        mid = st.sidebar.selectbox("Trận đấu (★ = trận mẫu)", ids, format_func=lambda m: lab[m], key="match_id")
+        st.session_state["_match_id"] = mid
         out["match_id"] = mid
         out["meta"] = mt.set_index("match_id").loc[mid].to_dict()
     if params:
         st.sidebar.markdown("#### Tham số thuật toán")
+        saved = st.session_state.get("_params", {})
         for k, v in default_params().items():
-            st.session_state.setdefault(f"p_{k}", v)
+            st.session_state.setdefault(f"p_{k}", saved.get(k, v))
         vals = {}
         for k in PARAM_KEYS:
             label, lo, hi, step, hlp = PARAM_UI[k]
@@ -158,6 +174,7 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
             vals[k] = st.sidebar.slider(label, lo, hi, step=step, key=f"p_{k}", help=hlp)
         st.sidebar.button("↺ Về mặc định", on_click=_reset_params)
         st.sidebar.caption("Ràng buộc: k_p ≤ k_c, m_p ≤ m_c. Δt = 10 s.")
+        st.session_state["_params"] = dict(vals)
         out["params"] = vals
     return out
 
