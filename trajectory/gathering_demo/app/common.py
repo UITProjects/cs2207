@@ -13,13 +13,12 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from src.analytics.gazetteer import nearest_place  # noqa: E402
-from src.config import default_params, path  # noqa: E402
+from src.config import default_params, load_config, path  # noqa: E402
 from src.mining.pipeline import PARAM_KEYS, MiningResult, run_pipeline  # noqa: E402
 from src.parse.telemetry import read_tables  # noqa: E402
 
 INK, PAPER, LINE, RUST = "#172033", "#FBF8F1", "#D8D0BE", "#B8541C"
 ICE, PEACH = "#E3F0F7", "#FBE3D6"
-SOURCE_LABEL = {"mock": "MOCK DATA", "real": "REAL PUBG DATA", "pubg": "REAL PUBG DATA"}
 
 PARAM_UI = {  # key: (label, min, max, step, help)
     "eps": ("eps — bán kính DBSCAN (m)", 50, 400, 10, "Hai người cách nhau ≤ eps là hàng xóm."),
@@ -67,16 +66,33 @@ def verdict(html: str, ok: bool | None = None) -> None:
 
 
 # ---------------- data discovery ----------------
-def source_dirs() -> dict[str, Path]:
-    """source → folder with processed matches. data/processed/{src} wins over data/sample/{src}."""
-    out: dict[str, Path] = {}
+KIND_ORDER = {"tournament": 0, "ranked": 1, "public": 2, "mock": 3}
+
+
+def datasets() -> dict[str, dict]:
+    """Every dataset folder with processed matches: data/sample/* (baked into the image) and local
+    data/processed/* (wins on a name clash). Info from dataset.json; ordered tournaments (newest first),
+    ranked/public, mock."""
+    out: dict[str, dict] = {}
     for base in (path("sample"), path("processed")):
         if not base.exists():
             continue
         for d in sorted(base.iterdir()):
-            if d.is_dir() and any((m / "meta.json").exists() for m in d.iterdir() if m.is_dir()):
-                out["real" if d.name == "pubg" else d.name] = d
-    return out
+            if not d.is_dir() or not any((m / "meta.json").exists() for m in d.iterdir() if m.is_dir()):
+                continue
+            info: dict = {}
+            for f in (path("sample") / d.name / "dataset.json", path("raw") / d.name / "dataset.json",
+                      d / "dataset.json"):  # baked info first, local files override
+                if f.exists():
+                    info |= json.loads(f.read_text(encoding="utf8"))
+            if not (d / str(info.get("showcase")) / "meta.json").exists():
+                info["showcase"] = next(m.name for m in sorted(d.iterdir()) if (m / "meta.json").exists())
+            kind = info.get("kind") or ("mock" if d.name == "mock" else "public")
+            out[d.name] = dict(name=d.name, folder=str(d), label=info.get("label", d.name), kind=kind,
+                               show_names=bool(info.get("show_names")), showcase=info.get("showcase"),
+                               created=info.get("created", ""))
+    return dict(sorted(out.items(), key=lambda kv: (KIND_ORDER.get(kv[1]["kind"], 9),
+                                                    "".join(chr(255 - ord(c)) for c in kv[1]["created"]))))
 
 
 @st.cache_data(show_spinner=False)
@@ -85,7 +101,21 @@ def match_table(folder: str) -> pd.DataFrame:
     for m in sorted(Path(folder).iterdir()):
         if (m / "meta.json").exists():
             rows.append(json.loads((m / "meta.json").read_text(encoding="utf8")))
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    return df.sort_values("createdAt").reset_index(drop=True) if len(df) else df
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def load_labels(folder: str, match_id: str) -> dict[str, str]:
+    """id → display name for teams (tag, e.g. MiTH) and players (name without the tag), from players.parquet.
+    Empty when the dataset keeps no names (then ids are shown)."""
+    f = Path(folder) / match_id / "players.parquet"
+    if not f.exists():
+        return {}
+    pl = pd.read_parquet(f)
+    out = {r.player: r.name for r in pl.itertuples() if r.name and r.name != r.player}
+    out |= {r.team: r.team_name for r in pl.drop_duplicates("team").itertuples() if r.team_name and r.team_name != r.team}
+    return out
 
 
 @st.cache_data(show_spinner="Đang đọc dữ liệu trận…", max_entries=8)
@@ -103,58 +133,71 @@ def mine(folder: str, match_id: str, params_items: tuple) -> MiningResult:
 
 
 # ---------------- sidebar ----------------
-def showcase_match() -> str | None:
-    from src.config import load_config
-
-    return (load_config().get("app") or {}).get("showcase_match")
-
-
 def _reset_params() -> None:
     for k, v in default_params().items():
         st.session_state[f"p_{k}"] = v
     st.session_state["_params"] = default_params()
 
 
+def _remembered(key: str, options: list, default) -> dict:
+    """Keep a sidebar choice across pages: Streamlit drops/rebuilds widget state on page switch, so the value lives
+    in a shadow key (updated by on_change) and is restored before the widget is drawn. Returns widget kwargs."""
+    shadow = f"_{key}"
+    cur = st.session_state.get(shadow)
+    if cur not in options:
+        cur = default if default in options else options[0]
+    st.session_state[shadow] = cur
+    st.session_state[key] = cur
+
+    def save() -> None:
+        st.session_state[shadow] = st.session_state[key]
+
+    return dict(key=key, on_change=save)
+
+
+def match_label(r, i: int, showcase: str | None) -> str:
+    d = int(r["duration"]) if pd.notna(r.get("duration")) else 0
+    when = str(r.get("createdAt", ""))[5:16].replace("T", " ")
+    when = f"{when[3:5]}/{when[0:2]} {when[6:]}" if len(when) >= 11 else when
+    return f"Trận {i + 1} · {when} · {d // 60}:{d % 60:02d}" + (" ★" if r["match_id"] == showcase else "")
+
+
 def sidebar(match_picker: bool = True, params: bool = True) -> dict:
-    """Render the shared sidebar. Returns dict(source, folder, match_id, params, meta)."""
-    srcs = source_dirs()
+    """Shared sidebar: dataset + match pickers, names toggle, algorithm parameters.
+    Returns dict(source, dataset, folder, matches, match_id, meta, labels, params)."""
+    ds_all = datasets()
     st.sidebar.markdown("### 🎯 Gathering · PUBG")
-    if not srcs:
+    if not ds_all:
         st.sidebar.error("Không có dữ liệu. Chạy `scripts/build_sample.py` hoặc pipeline (README).")
         st.stop()
-    names = list(srcs)
-    default = "real" if "real" in srcs else names[0]
-    if len(names) == 1:
-        src = names[0]
-    else:
-        src = st.sidebar.selectbox("Nguồn dữ liệu", names, index=names.index(st.session_state.get("source", default))
-                                   if st.session_state.get("source", default) in names else 0, key="source",
-                                   format_func=lambda s: SOURCE_LABEL.get(s, s))
-    cls = "real" if src in ("real", "pubg") else "mock"
-    st.sidebar.markdown(f'<span class="badge {cls}">{SOURCE_LABEL.get(src, src)}</span>', unsafe_allow_html=True)
-    folder = str(srcs[src])
-    mt = match_table(folder)
-    out = dict(source=src, folder=folder, matches=mt, match_id=None, params=default_params(), meta=None)
-    if len(mt) == 1:  # the demo ships one match: no picker, just what it is
-        r = mt.iloc[0]
-        out["match_id"], out["meta"] = r["match_id"], r.to_dict()
-        st.sidebar.caption(f"`{r['match_id']}` · Erangel · {r['gameMode']} · {r['n_teams']} đội · "
-                           f"{int(r['duration']) // 60}:{int(r['duration']) % 60:02d}")
-    elif match_picker and len(mt):
+    names = list(ds_all)
+    default_ds = (load_config().get("app") or {}).get("default_dataset")
+    name = st.sidebar.selectbox("Bộ dữ liệu", names, **_remembered("dataset", names, default_ds), format_func=lambda n: (
+        f"{ds_all[n]['label']} · {len(match_table(ds_all[n]['folder']))} trận"))
+    ds = ds_all[name]
+    real = ds["kind"] != "mock"
+    st.sidebar.markdown(f'<span class="badge {"real" if real else "mock"}">{"REAL" if real else "MOCK"} · '
+                        f'{ds["label"]}</span>', unsafe_allow_html=True)
+    mt = match_table(ds["folder"])
+    out = dict(source=name, dataset=ds, folder=ds["folder"], matches=mt, match_id=None, params=default_params(),
+               meta=None, labels={})
+    if len(mt):
         ids = list(mt["match_id"])
-        short = lambda m: m if len(m) <= 16 else "…" + m[-10:]  # noqa: E731
-        lab = {r.match_id: f"{short(r.match_id)} · {str(r.createdAt)[:10]} · {r.gameMode}"
-               + (" ★" if r.match_id == showcase_match() else "") for r in mt.itertuples()}
-        # widget keys are dropped on pages that don't render them, so remember the choice separately
-        cur = st.session_state.get("_match_id")
-        if cur not in ids:
-            cur = showcase_match() if showcase_match() in ids else ids[0]
-        if st.session_state.get("match_id") not in ids:
-            st.session_state["match_id"] = cur
-        mid = st.sidebar.selectbox("Trận", ids, format_func=lambda m: lab[m], key="match_id")
-        st.session_state["_match_id"] = mid
+        lab = {r["match_id"]: match_label(r, i, ds["showcase"]) for i, r in mt.iterrows()}
+        key = f"match_{name}"
+        kw = _remembered(key, ids, ds["showcase"])
+        if match_picker and len(ids) > 1:
+            mid = st.sidebar.selectbox("Trận (★ = trận mẫu)", ids, **kw, format_func=lambda m: lab[m])
+        else:
+            mid = st.session_state[key]
+            st.sidebar.caption(lab[mid])
         out["match_id"] = mid
         out["meta"] = mt.set_index("match_id").loc[mid].to_dict()
+        m = out["meta"]
+        st.sidebar.caption(f"Erangel · {m.get('gameMode')} · {m.get('n_teams')} đội · {m.get('n_players')} người")
+        if ds["show_names"]:
+            if st.sidebar.toggle("Hiện tên đội / người chơi", **_remembered("show_names", [True, False], True)):
+                out["labels"] = load_labels(ds["folder"], mid)
     if params:
         st.sidebar.markdown("#### Tham số thuật toán")
         saved = st.session_state.get("_params", {})
@@ -184,7 +227,13 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
 
 
 def caption_source(ctx: dict) -> str:
-    return f"[{SOURCE_LABEL.get(ctx['source'], ctx['source'])}]"
+    return f"[{'REAL' if ctx['dataset']['kind'] != 'mock' else 'MOCK'} · {ctx['dataset']['label']}]"
+
+
+def label_fn(ctx: dict):
+    """id → display label (team tag / player name when names are on, else the id)."""
+    labels = ctx.get("labels") or {}
+    return lambda x: labels.get(x, x)
 
 
 def params_key(p: dict) -> tuple:

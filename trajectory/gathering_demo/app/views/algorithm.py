@@ -28,6 +28,8 @@ common.page("Thuật toán", "🔬")
 ctx = common.sidebar()
 P = ctx["params"]
 folder, mid = ctx["folder"], ctx["match_id"]
+labels = ctx["labels"]
+L = common.label_fn(ctx)
 t = common.load_match(folder, mid)
 res = common.mine(folder, mid, common.params_key(P))
 pos, zones = t["positions"], t["zones"]
@@ -54,10 +56,11 @@ def crowd_label(i: int) -> str:
 
 @st.cache_data(show_spinner="Đang dựng hình 3D…", max_entries=32)
 def _cube(folder: str, mid: str, pk: tuple, mode: str, view: tuple, t_lo: float, t_hi: float,
-          crowd: int | None, noise: bool, connect: bool, teams: tuple, by: str, colors: tuple) -> go.Figure:
+          crowd: int | None, noise: bool, connect: bool, teams: tuple, by: str, colors: tuple,
+          labels: tuple = ()) -> go.Figure:
     r = common.mine(folder, mid, pk)
     return algo_cube(r, common.load_match(folder, mid)["positions"], mode, view, t_lo, t_hi, crowd, noise, connect,
-                     teams=list(teams), by=by, colors=dict(colors))
+                     teams=list(teams), by=by, colors=dict(colors), labels=dict(labels))
 
 
 def window_row(key: str) -> tuple[tuple, float, float, int | None]:
@@ -84,11 +87,11 @@ def team_row(key: str, view, lo: float, hi: float, noise_toggle: bool = False) -
     colors = team_palette(wt)
     a, c_ = st.columns([5, 1.4])
     wkey = f"{key}_{int(view[0])}_{int(view[1])}_{int(lo)}_{int(hi)}"  # new window → defaults reset
-    teams = a.multiselect(f"Đội ({len(wt)} đội trong vùng)", wt, default=wt, key=f"teams_{wkey}")
+    teams = a.multiselect(f"Đội ({len(wt)} đội trong vùng)", wt, default=wt, key=f"teams_{wkey}", format_func=L)
     connect = c_.toggle("Nối quỹ đạo", value=True, key=f"conn_{key}")
     noise = c_.toggle("Hiện nhiễu", value=False, key=f"noise_{key}") if noise_toggle else False
     if teams:
-        st.markdown(" ".join(f'<span class="badge" style="background:{colors[tm]}">{tm}</span>' for tm in teams),
+        st.markdown(" ".join(f'<span class="badge" style="background:{colors[tm]}">{L(tm)}</span>' for tm in teams),
                     unsafe_allow_html=True)
     return dict(teams=tuple(teams), by="player", colors=tuple(sorted(colors.items())),
                 noise=noise, connect=connect)
@@ -97,7 +100,7 @@ def team_row(key: str, view, lo: float, hi: float, noise_toggle: bool = False) -
 def cube(mode: str, view, lo, hi, crowd, key: str, noise_toggle: bool = False) -> None:
     kw = team_row(key, view, lo, hi, noise_toggle)
     st.plotly_chart(_cube(folder, mid, pk, mode, view, lo, hi, crowd, kw["noise"], kw["connect"], kw["teams"],
-                          kw["by"], kw["colors"]), width="stretch")
+                          kw["by"], kw["colors"], tuple(sorted(labels.items()))), width="stretch")
 
 
 pk = common.params_key(P)
@@ -111,7 +114,7 @@ with tab1:
         view, lo, hi, cr = window_row("raw")
         cube("raw", view, lo, hi, cr, "raw")
     else:
-        st.plotly_chart(animation(pos, zones), width="stretch")
+        st.plotly_chart(animation(pos, zones, labels=labels), width="stretch")
 
 with tab2:
     st.caption(f"DBSCAN eps = {P['eps']} m · min_pts = {P['min_pts']} · đĩa đậm = cụm ≥ m_c = {P['m_c']}")
@@ -132,14 +135,14 @@ with tab2:
         fig = base_map(660, view)
         noise = lab[lab["cluster"] < 0]
         fig.add_trace(go.Scatter(x=noise["x"], y=noise["y"], mode="markers", name="nhiễu",
-                                 marker=dict(size=6, color=NOISE), text=noise["player"], hoverinfo="text"))
+                                 marker=dict(size=6, color=NOISE), text=noise["player"].map(L), hoverinfo="text"))
         for i, cl in enumerate(cls):
             col = CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
             strong = cl.size >= P["m_c"]
             fig.add_trace(hull_trace(cl.pts, col, f"c{cl.k} ({cl.size})", opacity=0.35 if strong else 0.15))
             fig.add_trace(go.Scatter(x=cl.pts[:, 0], y=cl.pts[:, 1], mode="markers", name=f"c{cl.k} · {cl.size}",
                                      marker=dict(size=8, color=col, line=dict(width=1, color="black")),
-                                     text=list(cl.members), hoverinfo="text"))
+                                     text=[L(m) for m in cl.members], hoverinfo="text"))
             cx, cy = cl.centroid
             fig.add_annotation(x=cx, y=cy, text=f"<b>{cl.size}</b>", showarrow=False, yshift=-18,
                                font=dict(color="white" if strong else "#ddd", size=13 if strong else 10))
@@ -231,7 +234,7 @@ with tab4:
             for k, _, par in mine_g:
                 row = gdf.loc[k]
                 st.markdown(f"**G{k + 1}** · {row['place']} · {fmt_t(row['t_start'])}–{fmt_t(row['t_end'])} · "
-                            f"{len(par)} participator · {', '.join(row['teams'])}")
+                            f"{len(par)} participator · {', '.join(L(tm) for tm in row['teams'])}")
         with a:
             if is3d:
                 view, lo, hi = crowd_window(res, ci2)
@@ -245,7 +248,8 @@ with tab4:
                 view = zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 150, pad=1.2)
                 win = pos[(pos["t"] >= row["t_start"] - 60) & (pos["t"] <= row["t_end"] + 60)
                           & pos["x"].between(view[0], view[2]) & pos["y"].between(view[1], view[3])]
-                st.plotly_chart(animation(win, zones, highlight=set(par), view=view, height=600, frame_ms=350),
+                st.plotly_chart(animation(win, zones, highlight=set(par), view=view, height=600, frame_ms=350,
+                                          labels=labels),
                                 width="stretch")
             else:
                 verdict("Crowd này không có gathering.", False)

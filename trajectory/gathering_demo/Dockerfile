@@ -21,12 +21,16 @@ COPY app/ app/
 COPY tests/ tests/
 COPY data/sample/ data/sample/
 
-# build-time check: synthetic mining tests + parser tests + full pipeline on one sample match
+# build-time check: synthetic mining tests + parser contract (mock + real fixture) + every baked dataset
+# (data/sample/<dataset>/) must have at least one match with a gathering at the default parameters
 RUN python -m pytest -q tests/test_mining.py tests/test_parse.py -p no:cacheprovider \
- && python -c "import json,pathlib; from src.config import default_params; from src.mining.pipeline import run_pipeline; \
-from src.parse.telemetry import read_tables; d=sorted(p for p in pathlib.Path('data/sample/mock').iterdir() if (p/'meta.json').exists())[0]; \
-r=run_pipeline(read_tables(d), default_params()); assert r.gatherings, 'no gathering on sample'; \
-print('pipeline ok', d.name, len(r.crowds), 'crowds', len(r.gatherings), 'gatherings')" \
+ && python -c "import pathlib; from src.config import default_params; from src.mining.pipeline import run_pipeline; \
+from src.parse.telemetry import read_tables; \
+dss=sorted(p for p in pathlib.Path('data/sample').iterdir() if p.is_dir()); assert dss, 'no dataset baked'; \
+[print('dataset ok', ds.name, max(len(run_pipeline(read_tables(m), default_params()).gatherings) \
+ for m in ds.iterdir() if (m/'meta.json').exists()), 'gatherings (best match)') for ds in dss]; \
+assert all(max(len(run_pipeline(read_tables(m), default_params()).gatherings) for m in ds.iterdir() \
+ if (m/'meta.json').exists()) for ds in dss), 'a dataset has no gathering'" \
  && rm -rf tests
 
 RUN useradd --create-home --uid 1000 app && chown -R app /app

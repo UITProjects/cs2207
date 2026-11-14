@@ -114,19 +114,22 @@ def clean_match(tables: dict, dt: float = 10, max_gap: float = 30, vmax: float =
                 raw_dt_p10=round(float(raw_dt.quantile(0.1)), 3) if len(raw_dt) else None,
                 raw_dt_p90=round(float(raw_dt.quantile(0.9)), 3) if len(raw_dt) else None, t_max=int(out["t"].max()) if len(out) else 0,
                 n_phases=int(zones["phase"].max()) if len(zones) else 0)
-    return dict(positions=out, zones=zones, kills=kills, results=tables["results"], landings=tables["landings"],
-                meta=meta)
+    out_t = dict(positions=out, zones=zones, kills=kills, results=tables["results"], landings=tables["landings"],
+                 meta=meta)
+    if "players" in tables:
+        out_t["players"] = tables["players"]
+    return out_t
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true")
-    ap.add_argument("--source", default=None)
+    ap.add_argument("--dataset", "--source", dest="dataset", default=None, help="folder under data/interim")
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = load_config()["preprocess"]
-    src = a.source or datasource_name()
+    src = a.dataset or datasource_name()
     n = 0
     dirs = sorted(p for p in (path("interim") / src).iterdir() if (p / "meta.json").exists())
     for d in dirs:

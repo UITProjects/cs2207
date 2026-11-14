@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from PIL import Image
 
 from src.config import ROOT
-from src.viz.map_plot import MAP_M, fmt_t, hull_xy, zoom_box
+from src.viz.map_plot import MAP_M, fmt_t, hull_xy, labeler, zoom_box
 
 FULL = (0.0, 0.0, MAP_M, MAP_M)
 N_COLORS = 48
@@ -187,11 +187,14 @@ def space_time_cube(view: tuple[float, float, float, float], t_lo: float, t_hi: 
 # ---------------- match page ----------------
 def team_cube(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], colors: dict[str, str],
               gathering_df: pd.DataFrame | None, clusters: list, t_range: tuple[float, float],
-              show_others: bool = True, show_gatherings: bool = True, height: int = 720) -> go.Figure:
+              show_others: bool = True, show_gatherings: bool = True, height: int = 720,
+              labels: dict[str, str] | None = None) -> go.Figure:
     """Team centre tracks in (x, y, t); focus teams thick and coloured (● start, ■ end of trajectory),
     gatherings as orange disc columns."""
     t_lo, t_hi = t_range
+    L = labeler(labels)
     tr = tracks[tracks["t"].between(t_lo, t_hi)].rename(columns={"team": "player"})
+    tr = tr.assign(label=[f"{L(tm)} · {fmt_t(t)}" for tm, t in zip(tr["player"], tr["t"], strict=True)])
     lines = []
     if show_others:
         lines.append(dict(df=tr[~tr["player"].isin(focus)], color="#6B7080", width=2, opacity=0.45,
@@ -200,16 +203,16 @@ def team_cube(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], col
     points = []
     for tm in focus:
         d = tr[tr["player"] == tm]
-        lines.append(dict(df=d, color=colors[tm], width=8, name=tm, legend=True))
+        lines.append(dict(df=d, color=colors[tm], width=8, name=L(tm), legend=True))
         if d.empty:
             continue
         a, b = d.iloc[0], d.iloc[-1]
         if a.t == info.loc[tm, "land_t"]:
             points.append(dict(x=a.x, y=a.y, t=a.t, color=colors[tm], symbol="circle", size=7,
-                               hover=f"{tm} tiếp đất {fmt_t(a.t)} · {info.loc[tm, 'land_place']}"))
+                               hover=f"{L(tm)} tiếp đất {fmt_t(a.t)} · {info.loc[tm, 'land_place']}"))
         if b.t == info.loc[tm, "end_t"]:
             points.append(dict(x=b.x, y=b.y, t=b.t, color=colors[tm], symbol="square", size=7,
-                               hover=f"{tm} kết thúc quỹ đạo {fmt_t(b.t)} · {info.loc[tm, 'end_place']}"))
+                               hover=f"{L(tm)} kết thúc quỹ đạo {fmt_t(b.t)} · {info.loc[tm, 'end_place']}"))
     discs, labels = [], []
     if show_gatherings and gathering_df is not None and len(gathering_df):
         for g in gathering_df.itertuples():
@@ -257,21 +260,24 @@ def window_teams(pos: pd.DataFrame, view, t_lo: float, t_hi: float) -> list[str]
     return sorted(_in(pos, view, t_lo, t_hi)["team"].unique())
 
 
-def _team_centre(df: pd.DataFrame) -> pd.DataFrame:
+def _team_centre(df: pd.DataFrame, L=lambda x: x) -> pd.DataFrame:
     """One row per (team, t): mean position of the team's members in df; `player` = team for the line helper."""
     out = df.groupby(["team", "t"], as_index=False).agg(x=("x", "mean"), y=("y", "mean"), n=("player", "nunique"))
     out["player"] = out["team"]
-    out["label"] = [f"{tm} · {fmt_t(t)} · {n} người" for tm, t, n in zip(out["team"], out["t"], out["n"], strict=True)]
+    out["label"] = [f"{L(tm)} · {fmt_t(t)} · {n} người"
+                    for tm, t, n in zip(out["team"], out["t"], out["n"], strict=True)]
     return out
 
 
 def algo_cube(res, pos: pd.DataFrame, mode: str, view, t_lo: float, t_hi: float, crowd_idx: int | None = None,
               show_noise: bool = False, connect: bool = True, height: int = 640, teams: list[str] | None = None,
-              by: str = "team", colors: dict[str, str] | None = None) -> go.Figure:
+              by: str = "team", colors: dict[str, str] | None = None,
+              labels: dict[str, str] | None = None) -> go.Figure:
     """mode: raw | clusters | crowds | participators — the four algorithm steps in (x, y, t).
     Trajectories are coloured by team (`colors`, default `team_palette`) and limited to `teams`;
     by="team" draws one centre line per team, by="player" one line per player. Discs/links are not filtered."""
     P = res.params
+    L = labeler(labels)
     win = _in(pos, view, t_lo, t_hi)
     all_teams = sorted(win["team"].unique())
     colors = colors or team_palette(all_teams)
@@ -298,15 +304,15 @@ def algo_cube(res, pos: pd.DataFrame, mode: str, view, t_lo: float, t_hi: float,
             if tw.empty:
                 continue
             n_par = int(tw.loc[tw["player"].isin(par), "player"].nunique())
-            name = f"{tm} · {n_par} participator" if n_par else f"{tm} · chỉ đi qua"
+            name = f"{L(tm)} · {n_par} participator" if n_par else f"{L(tm)} · chỉ đi qua"
         else:
-            name = f"{tm} · {n_players} người"
+            name = f"{L(tm)} · {n_players} người"
         if by == "team":
             solid = mode != "participators" or n_par > 0
-            lines.append(dict(df=_team_centre(tw), color=col, width=7 if solid else 3, dash="solid" if solid else "dash",
+            lines.append(dict(df=_team_centre(tw, L), color=col, width=7 if solid else 3, dash="solid" if solid else "dash",
                               name=name, legend=True, group=tm))
             continue
-        tw = tw.assign(label=[f"{p} · {tm} · {fmt_t(t)}" for p, t in zip(tw["player"], tw["t"], strict=True)])
+        tw = tw.assign(label=[f"{L(p)} · {L(tm)} · {fmt_t(t)}" for p, t in zip(tw["player"], tw["t"], strict=True)])
         if not connect:  # points only: every point its own segment
             tw = tw.assign(player=tw["player"] + "@" + tw["t"].astype(str))
         if mode == "participators":

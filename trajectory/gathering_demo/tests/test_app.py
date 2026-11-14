@@ -89,3 +89,27 @@ def test_algorithm_team_filter_per_player():
     assert not any(b.key and b.key.startswith("by_") for b in at.get("button_group"))  # always per player
     at.toggle(key="conn_raw").set_value(False).run()
     assert not at.exception, [e.value for e in at.exception]
+
+
+def test_dataset_picker_and_names():
+    at = routed("views/match.py")
+    ds = at.sidebar.selectbox(key="dataset")
+    assert len(ds.options) >= 4 and ds.value == "as-pgs12gf"  # 3 tournaments + mock, PGS opens first
+    assert any("PGS 12 Grand Final" in o for o in ds.options)
+    focus = at.multiselect[0]
+    assert any(o in ("MiTH", "FLC", "NAVI", "T1", "4AM", "GEN", "TWIS") for o in focus.options), focus.options
+    at.sidebar.toggle(key="show_names").set_value(False).run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert all(o.startswith("T") and o[1:].isdigit() for o in at.multiselect[0].options)  # ids when names off
+    for name in ("sea-pacp26", "mock"):
+        at.sidebar.selectbox(key="dataset").set_value(name).run()
+        assert not at.exception, [e.value for e in at.exception]
+
+
+def test_match_picker_switches_match():
+    at = routed("views/algorithm.py")
+    sb = at.sidebar.selectbox(key="match_as-pgs12gf")
+    assert len(sb.options) == 5
+    for mid in sb.options[:2]:
+        at.sidebar.selectbox(key="match_as-pgs12gf").set_value(mid).run()
+        assert not at.exception, [e.value for e in at.exception]

@@ -54,18 +54,40 @@ def _summary(res: MiningResult, seqs: list[list[int]], zones: pd.DataFrame | Non
     return df
 
 
+def collapse_branches(crowds: list[list[int]], clusters: list[Cluster]) -> tuple[list[list[int]], list[int]]:
+    """Closed crowds that only differ by which branch they took when a cluster split (same span, same set of
+    people) are one movement pattern: keep the first, count the variants. E.g. a final circle splitting into two
+    disjoint groups at 6 steps gives 2^6 = 64 valid closed crowds → 1."""
+    cl = {c.id: c for c in clusters}
+    seen: dict[tuple, int] = {}
+    kept: list[list[int]] = []
+    variants: list[int] = []
+    for s in crowds:
+        key = (cl[s[0]].t, cl[s[-1]].t, frozenset(m for i in s for m in cl[i].members))
+        if key in seen:
+            variants[seen[key]] += 1
+            continue
+        seen[key] = len(kept)
+        kept.append(s)
+        variants.append(1)
+    return kept, variants
+
+
 def run_pipeline(tables: dict, params: dict) -> MiningResult:
     p = {k: params[k] for k in PARAM_KEYS}
     pos = tables["positions"]
     dt = int(tables.get("meta", {}).get("dt", 10))
     clusters, labels = snapshot_clusters(pos, p["eps"], p["min_pts"])
     crowds, links = discover_crowds(clusters, p["m_c"], p["k_c"], p["delta"], dt)
+    crowds, variants = collapse_branches(crowds, clusters)
     cl = {c.id: c for c in clusters}
     tads = [tad(cr, cl, p["k_p"], p["m_p"], p["k_c"]) for cr in crowds]
     gath = closed_gatherings(tads)
     res = MiningResult(p, clusters, labels, links, crowds, tads, gath)
     zones = tables.get("zones")
     res.crowd_df = _summary(res, crowds, zones, "crowd")
+    if len(res.crowd_df):
+        res.crowd_df["variants"] = variants
     res.gathering_df = _summary(res, [g for g, _, _ in gath], zones, "gathering", [pp for _, pp, _ in gath])
     if len(res.gathering_df):
         res.gathering_df["crowd"] = [ci for _, _, ci in gath]

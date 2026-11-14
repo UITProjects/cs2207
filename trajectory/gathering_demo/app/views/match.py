@@ -38,6 +38,9 @@ res = common.mine(folder, mid, common.params_key(P))
 pos, zones = t["positions"], t["zones"]
 gdf = res.gathering_df
 T_END = int(pos["t"].max())
+labels = ctx["labels"]
+LB = tuple(sorted(labels.items()))  # hashable for the figure caches
+L = common.label_fn(ctx)
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
@@ -48,18 +51,21 @@ def _summary(folder: str, mid: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 @st.cache_data(show_spinner="Đang dựng replay…", max_entries=12)
-def _replay(folder: str, mid: str, focus: tuple, follow: str | None, frame_ms: int) -> go.Figure:
+def _replay(folder: str, mid: str, focus: tuple, follow: str | None, frame_ms: int, lb: tuple = ()) -> go.Figure:
     tb = common.load_match(folder, mid)
     colors = dict(zip(focus, FOCUS_COLORS, strict=False))
-    return replay(tb["positions"], tb["zones"], list(focus), colors, follow=follow, frame_ms=frame_ms)
+    return replay(tb["positions"], tb["zones"], list(focus), colors, labels=dict(lb), follow=follow,
+                  frame_ms=frame_ms)
 
 
 @st.cache_data(show_spinner="Đang dựng hình 3D…", max_entries=16)
-def _team_cube(folder: str, mid: str, focus: tuple, t_range: tuple, others: bool, gath: bool) -> go.Figure:
+def _team_cube(folder: str, mid: str, focus: tuple, t_range: tuple, others: bool, gath: bool,
+               lb: tuple = ()) -> go.Figure:
     summary, tracks = _summary(folder, mid)
     r = common.mine(folder, mid, common.params_key(default_params()))
     colors = dict(zip(focus, FOCUS_COLORS, strict=False))
-    return team_cube(tracks, summary, list(focus), colors, r.gathering_df, r.clusters, t_range, others, gath)
+    return team_cube(tracks, summary, list(focus), colors, r.gathering_df, r.clusters, t_range, others, gath,
+                     labels=dict(lb))
 
 
 summary, tracks = _summary(folder, mid)
@@ -84,7 +90,7 @@ st.page_link("views/algorithm.py", label="← Thuật toán từng bước", ico
 
 default = [tm for tm in default_focus(summary) if tm in info.index]
 focus = st.multiselect("Đội theo dõi (tối đa 4)", list(summary["team"]), default=default, max_selections=MAX_FOCUS,
-                       key=f"focus_{mid}", help="Mặc định: 3 đội tham gia nhiều gathering nhất.")
+                       key=f"focus_{mid}", format_func=L, help="Mặc định: 3 đội tham gia nhiều gathering nhất.")
 colors = dict(zip(focus, FOCUS_COLORS, strict=False))
 
 
@@ -112,7 +118,7 @@ def render_encounter(gid: int, key: str, height: int = 580) -> None:
         items = []
         for tm in teams:
             mem = set(pos.loc[pos["team"] == tm, "player"])
-            items.append(f"<li><span style='color:{tcol[tm]}'>●</span> <b>{tm}</b>: {len(mem & present)} người có mặt"
+            items.append(f"<li><span style='color:{tcol[tm]}'>●</span> <b>{L(tm)}</b>: {len(mem & present)} người có mặt"
                          f" · {len(mem & par)} participator</li>")
         verdict(f"<b>{gname(gid)}</b> · phase {int(row.phase)} · {fmt_t(row.t_start)}–{fmt_t(row.t_end)} "
                 f"({int(row.t_end - row.t_start + 10)} s, {int(row.lifetime)} bước) · {len(teams)} đội · "
@@ -120,7 +126,7 @@ def render_encounter(gid: int, key: str, height: int = 580) -> None:
                 f"<ul style='margin:6px 0 0'>{''.join(items)}</ul>")
     with left:
         if mode == "3D":
-            lines = [dict(df=win[win["team"] == tm], color=tcol[tm], width=7 if tm in colors else 4, name=tm,
+            lines = [dict(df=win[win["team"] == tm], color=tcol[tm], width=7 if tm in colors else 4, name=L(tm),
                           legend=True) for tm in teams]
             discs = [dict(pts=cl.pts, t=cl.t, color=ORANGE, opacity=0.3, hover=f"{fmt_t(cl.t)} · {cl.size} người")
                      for cl in cs]
@@ -136,13 +142,13 @@ def render_encounter(gid: int, key: str, height: int = 580) -> None:
                     xs += list(p["x"]) + [None]
                     ys += list(p["y"]) + [None]
                     ends.append(p.iloc[-1])
-                fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=tm, legendgroup=tm, hoverinfo="name",
+                fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=L(tm), legendgroup=tm, hoverinfo="name",
                                          line=dict(color=tcol[tm], width=3.5 if tm in colors else 2)))
                 if ends:
                     e = pd.DataFrame(ends)
                     fig.add_trace(go.Scatter(x=e["x"], y=e["y"], mode="markers", legendgroup=tm, showlegend=False,
                                              marker=dict(size=10, color=tcol[tm], line=dict(width=1.5, color="white")),
-                                             hovertext=e["player"] + " · " + tm + " · " + e["t"].map(fmt_t),
+                                             hovertext=e["player"].map(L) + " · " + L(tm) + " · " + e["t"].map(fmt_t),
                                              hoverinfo="text"))
             fig.add_annotation(x=row.cx, y=view[1] + 0.06 * (view[3] - view[1]), showarrow=False,
                                text=f"<b>{gname(gid)}</b>", font=dict(color="white", size=14, shadow=TEXT_SHADOW))
@@ -158,27 +164,28 @@ with tabs[0]:
     view = st.segmented_control("Xem", ["Đường đi", "Replay", "3D x–y–t"], default="Đường đi",
                                 key="move_view") or "Đường đi"
     if focus:
-        st.markdown(" ".join(f'<span class="badge" style="background:{colors[tm]};color:#111">{tm}</span>'
+        st.markdown(" ".join(f'<span class="badge" style="background:{colors[tm]};color:#111">{L(tm)}</span>'
                              for tm in focus), unsafe_allow_html=True)
     if view == "Đường đi":
-        st.plotly_chart(team_routes(tracks, summary, focus, colors, zones), width="stretch")
+        st.plotly_chart(team_routes(tracks, summary, focus, colors, zones, labels=labels), width="stretch")
         for tm in focus:
             r = info.loc[tm]
-            st.markdown(f"{dot(tm)} **{tm}**: {r['route_str']} · {r['dist_km']:.1f} km · "
+            st.markdown(f"{dot(tm)} **{L(tm)}**: {r['route_str']} · {r['dist_km']:.1f} km · "
                         f"{r['n_gatherings']} gathering", unsafe_allow_html=True)
     elif view == "Replay":
         a, b = st.columns([2, 1])
         follow = a.selectbox("Bám theo đội", [None] + focus, key=f"follow_{mid}",
-                             format_func=lambda tm: "— toàn bản đồ —" if tm is None else tm)
+                             format_func=lambda tm: "— toàn bản đồ —" if tm is None else L(tm))
         speed = b.radio("Tốc độ", ["Chậm", "Vừa", "Nhanh"], index=1, horizontal=True, key="speed")
-        st.plotly_chart(_replay(folder, mid, tuple(focus), follow, {"Chậm": 450, "Vừa": 250, "Nhanh": 120}[speed]),
+        st.plotly_chart(_replay(folder, mid, tuple(focus), follow, {"Chậm": 450, "Vừa": 250, "Nhanh": 120}[speed],
+                                LB),
                         width="stretch")
     else:
         a, b, c3 = st.columns([3, 1, 1])
         t_range = a.slider("Khoảng thời gian", 0, T_END, (0, T_END), step=10, format="%d s", key=f"cube_t_{mid}")
         others = b.toggle("Đội khác", value=True, key="cube_others")
         gath = c3.toggle("Gathering", value=True, key="cube_gath")
-        st.plotly_chart(_team_cube(folder, mid, tuple(focus), tuple(t_range), others, gath), width="stretch")
+        st.plotly_chart(_team_cube(folder, mid, tuple(focus), tuple(t_range), others, gath, LB), width="stretch")
         st.caption(f"{fmt_t(t_range[0])} → {fmt_t(t_range[1])} · trục đứng = thời gian · cột cam = gathering")
 
 # ---------------- 🎯 gatherings ----------------
@@ -196,7 +203,7 @@ with tabs[1]:
             base=g["t_start"], orientation="h", marker_color=[phase_col[min(int(p), 8)] for p in g["phase"]],
             text=[f"{len(teams)} đội · {n} par." for teams, n in zip(g["teams"], g["n_participators"], strict=True)],
             textposition="auto", cliponaxis=False, hoverinfo="text",
-            hovertext=[f"{n} · {fmt_t(a)}–{fmt_t(b)} · phase {p} · {', '.join(teams)}" for n, a, b, p, teams
+            hovertext=[f"{n} · {fmt_t(a)}–{fmt_t(b)} · phase {p} · {', '.join(L(tm) for tm in teams)}" for n, a, b, p, teams
                        in zip(names, g["t_start"], g["t_end"], g["phase"], g["teams"], strict=True)]))
         ticks = list(range(0, T_END + 1, 180))
         gt.update_layout(height=60 + 34 * len(g), margin=dict(l=10, r=10, t=10, b=10), plot_bgcolor="#FBF8F1",

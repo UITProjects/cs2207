@@ -1,8 +1,9 @@
 # PUBG API response shapes used by this project
 
 Sources: official docs (documentation.pubg.com — Matches, Telemetry Events, Telemetry Objects),
-`pubg-python` / `chicken-dinner` models, community sample telemetry. Items marked **UNVERIFIED**
-must be checked against a real file at M8 (`scripts/inspect_telemetry.py`).
+`pubg-python` / `chicken-dinner` models, community sample telemetry. **Verified on real files at M8
+(2026-11-14)** with `scripts/inspect_telemetry.py`: 1 public official Erangel squad match and the PGS 12 Grand
+Final / SEA PACP26 / SEA PACI26 tournament matches. A trimmed real match lives in `tests/fixtures/real/`.
 Typed models: `src/datasource/schema.py` (pydantic, `extra="allow"`). The mock simulator
 (`src/datasource/mock_sim.py`) emits exactly these shapes.
 
@@ -29,13 +30,24 @@ Typed models: `src/datasource/schema.py` (pydantic, `extra="allow"`). The mock s
 ## Telemetry — JSON array of events, each with `_D` (ISO-8601 UTC) and `_T` (type)
 Coordinates `location.{x,y,z}` in **centimeters**, origin top-left, Erangel 0–816 000.
 
-`Character` = `{name, teamId, health, location{x,y,z}, ranking, accountId, isInBlueZone, isInRedZone, zone[]}`
+`Character` = `{name, teamId, health, location{x,y,z}, ranking, individualRanking, accountId, type, isInBlueZone,
+isInRedZone, isInVehicle, isDBNO, inSpecialZone, zone[]}`. Verified: `type` is `user` (human), `user_ai` (AI bot,
+`accountId` starts with `ai.`) or `monster` (NPC guard). A public official match had **38 humans / 62 bots / 5 NPCs**;
+tournament matches are humans only. The parser drops bots and NPCs (`preprocess.drop_bots`).
 
 | `_T` | Fields used | Notes |
 |---|---|---|
-| `LogMatchStart` | `_D`, `mapName`, `characters[]`, `teamSize` | `characters[]` items are **UNVERIFIED**: either `Character` or wrapper `{character: Character, ...}` — parser accepts both |
-| `LogPlayerPosition` | `character`, `vehicle`, `elapsedTime`, `numAlivePlayers` | frequency ~10 s (**UNVERIFIED**, measure). `vehicle` is `null` or `{vehicleType, vehicleId, healthPercent, feulPercent}` on foot (**UNVERIFIED**: may be an object with empty `vehicleId`) |
-| `LogParachuteLanding` | `character`, `distance` | one per player (**UNVERIFIED**: can be missing for disconnects → fallback z-stabilisation) |
-| `LogGameStatePeriodic` | `gameState{elapsedTime, numAliveTeams, numAlivePlayers, safetyZonePosition{x,y,z}, safetyZoneRadius, poisonGasWarningPosition, poisonGasWarningRadius, redZonePosition, redZoneRadius}` | `safetyZone*` = current blue circle, `poisonGasWarning*` = next (white) circle — **UNVERIFIED** semantics; radii in cm |
+| `LogMatchStart` | `_D`, `mapName`, `characters[]`, `teamSize` | Verified: `characters[]` items are wrappers `{character: Character, primaryWeaponFirst, …}` (parser accepts both forms) |
+| `LogPlayerPosition` | `character`, `vehicle`, `elapsedTime`, `numAlivePlayers` | Verified: every **10.00 s** per player (median 10.00, p10 9.98, p90 10.02). `vehicle` is `null` on foot or an object (`vehicleType`, `vehicleId`, `velocity`, `seatIndex`, …) in a vehicle. Tournament telemetry also has positions **up to ~2 min before `LogMatchStart`** (lobby); the parser drops t < 0 |
+| `LogParachuteLanding` | `character`, `distance` | Verified: can occur **more than once per player** (153 events for 105 characters); the parser keeps the first. Missing → fallback z-stabilisation |
+| `LogGameStatePeriodic` | `gameState{elapsedTime, numAliveTeams, numAlivePlayers, safetyZonePosition{x,y,z}, safetyZoneRadius, poisonGasWarningPosition, poisonGasWarningRadius, redZonePosition, redZoneRadius, blackZone*}` | Verified: `poisonGasWarning*` = the **next (white)** circle, changes in steps (8 values per match, 0 before the first circle); `safetyZone*` = the **current (blue)** circle, shrinks continuously and is always ≥ the white one. Radii in cm |
 | `LogPlayerKillV2` | `victim`, `killer` (nullable for zone deaths), `finisher`, `killerDamageInfo{damageTypeCategory, damageCauserName, distance}`, `isSuicide` | |
-| `LogMatchEnd` | `characters[]` (wrapper `{character: Character}` **UNVERIFIED**) | `character.ranking` = final team placement |
+| `LogMatchEnd` | `characters[]` (wrapper `{character: Character}`, verified) | `character.ranking` = final team placement |
+
+### Tournaments (verified)
+- `GET /tournaments` (rate limited) lists ~1 200 events with `createdAt`; `GET /tournaments/{id}` lists their matches.
+- Tournament matches are fetched from the **`tournament` shard**: `/shards/tournament/matches/{id}`. Their
+  `gameMode` is `esports-squad` and `matchType` is empty. Telemetry comes from the same CDN.
+- Lobbies are 16 teams × 4 pros (some matches 14–16 teams), with no bots. Player names follow `TEAMTAG_Name`
+  (e.g. `MiTH_Baren`), so the team name is the most common prefix (`players.parquet`, tournaments only).
+- Some listed matches are aborted remakes (one lasted 16 s), so the tournament filter sets `min_duration_s: 600`.

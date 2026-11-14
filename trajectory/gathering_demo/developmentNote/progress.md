@@ -134,3 +134,31 @@ User: "keep pages, components only related to trajectory" and "make the algorith
   
   `build_sample.py` no longer builds aggregates. The parser still outputs kills/results tables (raw data), but nothing in the UI uses them.
 - Tests: 44 passed, ruff clean (new: default page = algorithm; result page has 2 tabs and no rank/kill/VOD text).
+
+## M8 — Real PUBG data (2026-11-14)
+- Key in `.env` (gitignored, never printed); WARP installed by the user (the ISP had started resetting PUBG again). `check_connectivity.py`: status / samples / match / telemetry all 200.
+- **Probe findings:**
+  - a public official Erangel squad match = 38 humans + 62 AI bots + 5 NPCs, so public matches are not used;
+  - `/tournaments` works with the key (1 213 events); tournament matches come from shard `tournament`, gameMode `esports-squad`, matchType empty, 16 teams × 4 pros, no bots;
+  - positions every 10.00 s;
+  - tournament telemetry starts about 2 min before `LogMatchStart`;
+  - parachute landings repeat;
+  - white `poisonGasWarning` = next circle and blue `safetyZone` = current circle (verified);
+  - every UNVERIFIED item in `docs/schema.md` is now resolved.
+- **Datasets** (user choice: PGS 12 Grand Final + latest, tournament first, baked into the image instead of a PVC). `scripts/fetch_datasets.py` produces:
+  - `as-pgs12gf` (5 Erangel matches);
+  - `sea-pacp26` (2, 13 Nov);
+  - `sea-paci26` (2, 12 Nov; an aborted 16 s remake removed and `min_duration_s: 600` added to the filters).
+  
+  Raw in `data/raw/<name>/` (gitignored), processed + `dataset.json` in `data/sample/<name>/` (about 1.5 MB, committed, copied by the Dockerfile).
+- **Code:**
+  - `TournamentDataSource`; crawl `--tournament/--dataset/--label/--list-limit` (400 sample ids per wanted public match); per-kind filters (`filters_tournament`, `filters_ranked`);
+  - parse/clean `--dataset`;
+  - parser: bots/NPCs dropped (`preprocess.drop_bots`), lobby positions dropped, `players.parquet` with team tag + player names only when `show_names` (tournaments), names and teams also read from MatchStart/End;
+  - pipeline `collapse_branches`: a PGS final circle split into disjoint groups at 6 steps → 64 equivalent closed crowds collapsed to 1 (same span + same people; `variants` column). Mock recall is still ≥ 0.8.
+- **App:**
+  - sidebar "Bộ dữ liệu" (tournaments newest first, then mock; default PGS 12 GF), "Trận" picker (★ showcase = best gathering coverage), badge `REAL · <label>`, toggle "Hiện tên đội / người chơi";
+  - names are labels only (legends, hovers, pickers, chips, tables) via a `labels` mapping in `map_plot` / `cube`;
+  - choices persist across pages (fixed: page switch reset the selectbox to its first option → shadow key + on_change).
+- **Dockerfile:** the build check runs the parser contract (mock + real fixture) and asserts every baked dataset has a gathering. `docker build` OK; the image lists the 4 datasets, has no `.env`, health ok.
+- **Tests:** new `tests/test_real.py` (names only when kept, team tag, bots, lobby, tournament filters, mocked tournament source, dataset discovery) + real fixture `tests/fixtures/real/` (trimmed PGS match, names masked) + app tests for the dataset/match pickers and names. **54 passed, ruff clean.**

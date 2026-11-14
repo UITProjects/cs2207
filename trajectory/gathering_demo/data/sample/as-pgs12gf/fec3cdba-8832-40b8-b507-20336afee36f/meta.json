@@ -1,0 +1,20 @@
+{
+ "match_id": "fec3cdba-8832-40b8-b507-20336afee36f",
+ "mapName": "Baltic_Main",
+ "gameMode": "esports-squad",
+ "matchType": "",
+ "createdAt": "2026-10-30T12:33:52Z",
+ "duration": 1656,
+ "n_players": 64,
+ "n_teams": 16,
+ "start": "2026-10-30T12:33:52.723Z",
+ "names": true,
+ "dt": 10,
+ "n_points": 6711,
+ "n_raw_points": 7871,
+ "raw_dt_median": 10.0,
+ "raw_dt_p10": 9.97,
+ "raw_dt_p90": 10.031,
+ "t_max": 1710,
+ "n_phases": 8
+}

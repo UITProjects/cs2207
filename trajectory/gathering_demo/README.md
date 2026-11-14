@@ -2,7 +2,7 @@
 
 This demo mines **Crowd / Gathering patterns** (Zheng et al., *On Discovery of Gathering Patterns from Trajectories*, ICDE 2013) from PUBG squad matches on Erangel. It ships as a multipage **Streamlit** app (Vietnamese UI) that runs fully offline from the committed sample in `data/sample/`.
 
-The demo is for the final presentation, so it covers **trajectory mining only**. There is **one match** (`mock-2207-0001`) and **two pages** (`app/Home.py`, `st.navigation`), with the algorithm first and the result second:
+The demo is for the final presentation, so it covers **trajectory mining only**. It ships **real PUBG tournament datasets** baked into the image (default: **PGS 12 Grand Final**) plus the mock match. There are **two pages** (`app/Home.py`, `st.navigation`), with the algorithm first and the result second. The sidebar picks the **dataset** and the **match**, and toggles **team/player names** (tournaments only: team tag such as `MiTH`, player such as `Baren`):
 
 1. **🔬 Thuật toán** (`app/views/algorithm.py`, opens first): the match step by step, with parameter sliders. It has a **3D x–y–t** view (default; like Fig. 1c of the paper and the old concert demo) or 2D, and trajectories coloured by team with a team filter and team-centre / per-player lines. The four tabs are:
    1. ① trajectories;
@@ -15,7 +15,18 @@ The demo is for the final presentation, so it covers **trajectory mining only**.
 
 The 3D views are drawn by `src/viz/cube.py`. There is no kill or ranking content: everything shown comes from positions (x, y, t) and the mined patterns.
 
-- Data comes from a **mock simulator** that emits the exact PUBG API JSON shapes. The **real PUBG API** source is ready and switches on once a key is set (`DATASOURCE=pubg`).
+## Datasets (baked into the Docker image, no volume needed)
+
+| Dataset (`data/sample/<name>/`) | What | Matches |
+|---|---|---|
+| `as-pgs12gf` | **PGS 12 Grand Final** (30 Oct – 1 Nov 2026), 16 pro teams × 4 | 5 Erangel |
+| `sea-pacp26` | newest tournament with Erangel matches (13 Nov 2026) | 2 Erangel |
+| `sea-paci26` | second newest (12 Nov 2026) | 2 Erangel (an aborted 16 s remake was filtered out) |
+| `mock` | simulator, 25 squads, same JSON shapes as the API | 1 |
+
+How they were chosen (`scripts/fetch_datasets.py`, needs the key): PGS 12 Grand Final (pinned), then the 2 newest tournaments from `/tournaments` that have Erangel matches. If fewer qualify, the script falls back to the newest **ranked** public matches. Public "official" matches are mostly AI bots (38 humans / 105 characters in our probe), so they are not used. Each `dataset.json` holds the label, kind, `show_names` and the showcase match (the one with the best gathering coverage, ★ in the picker).
+
+Refresh: `uv run python scripts/fetch_datasets.py`, then `parse` / `clean` / `build_sample.py --dataset <name>` per dataset (below), then rebuild the image. The raw downloads stay in `data/raw/<name>/` (gitignored, about 23 MB); only the processed parquet (about 1.5 MB) is committed and copied by the Dockerfile (`COPY data/sample/`).
 
 Served at `https://cs2207.datrollout.dev/trajectory/gathering/`. The previous concert demo lives in `legacy/`.
 
@@ -30,7 +41,7 @@ uv run streamlit run app/Home.py
 
 Without uv: `python3.11 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`.
 
-## Pipeline (same commands for mock and real; switch with `DATASOURCE=mock|pubg`)
+## Pipeline (same commands for every dataset)
 
 ```bash
 DATASOURCE=mock uv run python -m src.ingest.crawl --max-matches 50     # data/raw/mock/{id}/ (idempotent)
@@ -43,7 +54,16 @@ uv run streamlit run app/Home.py
 
 The app reads `data/processed/{source}` when it exists and falls back to the committed `data/sample/{source}` otherwise. It never calls the API. With a single match, the sidebar shows no picker.
 
-**One match only:** the committed sample holds just `mock-2207-0001` (`build_sample.py --match mock-2207-0001`). The local processed/interim folders were trimmed to that same match. To get all 50 mock matches back, run the pipeline above: `data/raw/mock` is kept, and the crawl is deterministic.
+A real tournament, end to end:
+
+```bash
+uv run python -m src.ingest.crawl --tournament as-pgs12gf --dataset as-pgs12gf --label "PGS 12 Grand Final" --max-matches 5
+uv run python -m src.parse.telemetry --all --dataset as-pgs12gf     # names kept: dataset.json show_names = true
+uv run python -m src.preprocess.clean --all --dataset as-pgs12gf
+uv run python scripts/build_sample.py --dataset as-pgs12gf          # → data/sample/as-pgs12gf/ (+ showcase)
+```
+
+The mock sample holds `mock-2207-0001` only; `data/raw/mock` keeps all 50 for regeneration (the crawl is deterministic).
 
 Other helper scripts:
 
@@ -66,10 +86,11 @@ src/ingest/crawl.py         crawl CLI      src/parse/telemetry.py   raw → tabl
 src/preprocess/clean.py     landing/death cut, outlier filter, Δt resampling (gaps ≤ 30 s), phases
 src/mining/                 snapshot (DBSCAN), hausdorff (+bbox lower bound), crowd (Alg. 1), gathering (TAD), pipeline
 src/analytics/              gazetteer (place names), movement (team tracks, routes)
+scripts/fetch_datasets.py   download the tournament datasets (PGS 12 GF + newest tournaments with Erangel)
 src/viz/map_plot.py         Plotly map (meters, reversed y), animations, hulls, zone circles
 src/viz/cube.py             3D space-time cube (x, y, t): textured map floor, disc meshes, team/algorithm cubes
 app/Home.py                 router: app/views/algorithm.py → app/views/match.py
-docs/schema.md              PUBG response shapes (UNVERIFIED items get checked at M8)
+docs/schema.md              PUBG response shapes (verified on real files at M8)
 ```
 
 ## Tests
@@ -83,7 +104,13 @@ uv run pytest            # synthetic mining cases, parser contract (mock + tests
 
 1. The ISP may reset connections to PUBG domains. Turn on **Cloudflare WARP** first, then run `uv run python scripts/check_connectivity.py`.
 2. Put `PUBG_API_KEY=...` in `trajectory/gathering_demo/.env` (gitignored; see `.env.example`). The key is read from the environment first, then from `.env`, and is never printed.
-3. Run `DATASOURCE=pubg uv run python -m src.ingest.crawl --max-matches 50`, then parse, clean and `build_sample.py --source pubg` (writes `data/sample/real/`).
+3. Tournaments: `scripts/fetch_datasets.py` or `src.ingest.crawl --tournament <id>` (above). Public samples: `DATASOURCE=pubg uv run python -m src.ingest.crawl --max-matches 50` (it scans up to 400 sample ids per wanted match, because most samples are other maps/modes).
+4. Real-data findings (M8, details in `docs/schema.md`):
+   - positions every 10.00 s;
+   - tournament telemetry starts about 2 min before `LogMatchStart` (dropped);
+   - parachute landings can repeat (the first is kept);
+   - the white `poisonGasWarning` circle is the next zone and the blue `safetyZone` circle the current one;
+   - a final circle can split into disjoint groups at several steps, which gave 64 equivalent closed crowds. The pipeline collapses crowds with the same span and the same people (`variants` column).
 
 ### Cloud crawler (GitHub Actions)
 

@@ -26,6 +26,18 @@ def map_source() -> str:
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
 
 
+def labeler(labels: dict[str, str] | None):
+    """id → display label (team tag / player name), falling back to the id."""
+    labels = labels or {}
+    return lambda x: labels.get(x, x)
+
+
+def who(df: pd.DataFrame, labels: dict[str, str] | None) -> pd.Series:
+    """'Baren · MiTH' (or 'P017 · T05') hover text per position row."""
+    L = labeler(labels)
+    return df["player"].map(L) + " · " + df["team"].map(L)
+
+
 def team_color(team: str) -> str:
     return TEAM_COLORS[(int(team[1:]) - 1) % len(TEAM_COLORS)]
 
@@ -78,7 +90,8 @@ def _broken_line(df: pd.DataFrame, gap: float = 10.5) -> tuple[list, list]:
 
 
 def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], colors: dict[str, str],
-                zones: pd.DataFrame | None = None, height: int = 760, tick_s: int = 180) -> go.Figure:
+                zones: pd.DataFrame | None = None, height: int = 760, tick_s: int = 180,
+                labels: dict[str, str] | None = None) -> go.Figure:
     """Squad-centre path of every team: grey for the others, thick colour for `focus` teams with a start
     marker (● landing), an end marker (■ end of trajectory) and time ticks every `tick_s` seconds."""
     fig = base_map(height, dim=0.45)
@@ -100,7 +113,8 @@ def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], c
         col = colors[team]
         r = info.loc[team]
         x, y = _broken_line(tr)
-        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=col, width=4), name=team, hoverinfo="name"))
+        tn = labeler(labels)(team)
+        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=col, width=4), name=tn, hoverinfo="name"))
         ticks = tr[(tr["t"] % tick_s) < 10]
         keep, last = [], None  # skip a tick that would sit on top of the previous one (team standing still)
         for i, rr in ticks.iterrows():
@@ -112,13 +126,13 @@ def team_routes(tracks: pd.DataFrame, summary: pd.DataFrame, focus: list[str], c
                                  marker=dict(size=6, color=col, line=dict(width=1, color="black")),
                                  text=[fmt_t(t) for t in ticks["t"]], textposition="top right",
                                  textfont=dict(color="white", size=9, shadow=TEXT_SHADOW),
-                                 hovertext=[f"{team} · {fmt_t(t)}" for t in ticks["t"]], hoverinfo="text"))
+                                 hovertext=[f"{tn} · {fmt_t(t)}" for t in ticks["t"]], hoverinfo="text"))
         a, b = tr.iloc[0], tr.iloc[-1]
         fig.add_trace(go.Scatter(x=[a.x], y=[a.y], mode="markers", showlegend=False, hoverinfo="text",
-                                 hovertext=f"{team} tiếp đất {fmt_t(a.t)} · {r['land_place']}",
+                                 hovertext=f"{tn} tiếp đất {fmt_t(a.t)} · {r['land_place']}",
                                  marker=dict(size=15, color=col, symbol="circle", line=dict(width=2.5, color="white"))))
         fig.add_trace(go.Scatter(x=[b.x], y=[b.y], mode="markers", showlegend=False, hoverinfo="text",
-                                 hovertext=f"{team} kết thúc quỹ đạo {fmt_t(r['end_t'])} · {r['end_place']}",
+                                 hovertext=f"{tn} kết thúc quỹ đạo {fmt_t(r['end_t'])} · {r['end_place']}",
                                  marker=dict(size=13, color=col, symbol="square", line=dict(width=2, color="white"))))
     if zones is not None and len(zones):
         z = zones.iloc[-1]
@@ -142,7 +156,8 @@ def _play_controls(fig: go.Figure, times: list, frame_ms: int) -> None:
                              for t in times])])
 
 
-def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, focus: list[str], colors: dict[str, str], trail_steps: int = 6, follow: str | None = None, follow_half: float = 700,
+def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, focus: list[str], colors: dict[str, str],
+           labels: dict[str, str] | None = None, trail_steps: int = 6, follow: str | None = None, follow_half: float = 700,
            height: int = 760, frame_ms: int = 250, max_frames: int = 300) -> go.Figure:
     """Animated replay: other players as small grey dots, focus teams as big coloured dots with a tail of
     the last `trail_steps` positions. `follow` keeps the view on one team."""
@@ -159,7 +174,7 @@ def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, focus: list[str], colo
     def frame_data(t):
         g = by_t.get(t, pos.iloc[0:0])
         o = g[~g["team"].isin(focus)]
-        out = [go.Scatter(x=o["x"], y=o["y"], mode="markers", hoverinfo="text", text=o["player"] + " · " + o["team"],
+        out = [go.Scatter(x=o["x"], y=o["y"], mode="markers", hoverinfo="text", text=who(o, labels),
                           marker=dict(size=6, color="rgba(235,235,235,0.75)", line=dict(width=0.5, color="black")),
                           showlegend=False)]
         win = fpos[(fpos["t"] > t - trail_steps * dt - 0.5) & (fpos["t"] <= t)]
@@ -174,7 +189,7 @@ def replay(pos: pd.DataFrame, zones: pd.DataFrame | None, focus: list[str], colo
                                   hoverinfo="skip", showlegend=False))
             now = g[g["team"] == team]
             out.append(go.Scatter(x=now["x"], y=now["y"], mode="markers", hoverinfo="text",
-                                  text=now["player"] + " · " + team, showlegend=False,
+                                  text=who(now, labels), showlegend=False,
                                   marker=dict(size=12, color=colors[team], line=dict(width=1.5, color="white"))))
         return out
 
@@ -253,27 +268,8 @@ def fmt_t(t: float) -> str:
     return f"{t // 60:02d}:{t % 60:02d}"
 
 
-def trajectories(pos: pd.DataFrame, height: int = 700) -> go.Figure:
-    fig = base_map(height)
-    for team, g in pos.groupby("team"):
-        xs, ys = [], []
-        for _, p in g.groupby("player"):
-            p = p.sort_values("t")
-            gap = p["t"].diff().fillna(0) > 10.5
-            for x, y, br in zip(p["x"], p["y"], gap, strict=True):
-                if br:
-                    xs.append(None)
-                    ys.append(None)
-                xs.append(x)
-                ys.append(y)
-            xs.append(None)
-            ys.append(None)
-        fig.add_trace(go.Scattergl(x=xs, y=ys, mode="lines", line=dict(color=team_color(team), width=1.4), opacity=0.6,
-                                   name=team, hoverinfo="name"))
-    return fig
-
-
 def animation(pos: pd.DataFrame, zones: pd.DataFrame | None, times: list[int] | None = None, max_frames: int = 300,
+              labels: dict[str, str] | None = None,
               highlight: set[str] | None = None, view=None, height: int = 680, color_by: str = "team",
               frame_ms: int = 220) -> go.Figure:
     """Time animation (Play + slider). Players coloured by team; `highlight` players get a thick outline."""
@@ -289,7 +285,7 @@ def animation(pos: pd.DataFrame, zones: pd.DataFrame | None, times: list[int] | 
         colors = [team_color(tm) for tm in g["team"]] if color_by == "team" else list(g["color"])
         lw = [3 if p in hl else 0.6 for p in g["player"]]
         lc = ["black" if p in hl else "white" for p in g["player"]]
-        return go.Scatter(x=g["x"], y=g["y"], mode="markers", text=g["player"] + " · " + g["team"],
+        return go.Scatter(x=g["x"], y=g["y"], mode="markers", text=who(g, labels),
                           hoverinfo="text", marker=dict(size=9 if hl else 7, color=colors, line=dict(width=lw, color=lc)),
                           showlegend=False)
 
