@@ -54,7 +54,7 @@ def crowd_label(i: int) -> str:
     return f"Cr{i + 1} · {cdf.loc[i, 'place']} · {fmt_t(cdf.loc[i, 't_start'])}–{fmt_t(cdf.loc[i, 't_end'])}"
 
 
-@st.cache_resource(show_spinner="Đang dựng hình 3D…", max_entries=64)  # figures: shared, read-only (no per-session copy)
+@st.cache_resource(show_spinner="Đang dựng hình 3D…", max_entries=24)  # figures: shared, read-only (no per-session copy)
 def _cube(folder: str, mid: str, pk: tuple, mode: str, view: tuple, t_lo: float, t_hi: float,
           crowd: int | None, noise: bool, connect: bool, teams: tuple, by: str, colors: tuple,
           labels: tuple = ()) -> go.Figure:

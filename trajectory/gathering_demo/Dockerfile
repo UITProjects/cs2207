@@ -43,7 +43,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
 # .streamlit/config.toml in /app holds the theme; the base URL path comes from the k8s manifest env.
 # fileWatcherType=none: the source watcher re-resolves every imported module's path on each script run of each
 # session (≈ 70 % of server CPU in a profile); code never changes inside the image, so it is pure waste here.
+# disconnectedSessionTTL=60: keep a dropped session 60 s (default 120) so reloads free memory sooner.
 CMD ["streamlit", "run", "app/Home.py", \
      "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", \
-     "--server.fileWatcherType=none", "--server.runOnSave=false", \
+     "--server.fileWatcherType=none", "--server.runOnSave=false", "--server.disconnectedSessionTTL=60", \
      "--browser.gatherUsageStats=false"]

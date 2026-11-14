@@ -43,14 +43,14 @@ LB = tuple(sorted(labels.items()))  # hashable for the figure caches
 L = common.label_fn(ctx)
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+@st.cache_resource(show_spinner=False, max_entries=8)  # read-only, shared
 def _summary(folder: str, mid: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     tb = common.load_match(folder, mid)
     r = common.mine(folder, mid, common.params_key(default_params()))
     return team_summary(tb, r.gathering_df), team_tracks(tb["positions"])
 
 
-@st.cache_resource(show_spinner="Đang dựng replay…", max_entries=24)  # figures: shared, read-only
+@st.cache_resource(show_spinner="Đang dựng replay…", max_entries=8)  # figures: shared, read-only
 def _replay(folder: str, mid: str, focus: tuple, follow: str | None, frame_ms: int, lb: tuple = ()) -> go.Figure:
     tb = common.load_match(folder, mid)
     colors = dict(zip(focus, FOCUS_COLORS, strict=False))
@@ -58,7 +58,7 @@ def _replay(folder: str, mid: str, focus: tuple, follow: str | None, frame_ms: i
                   frame_ms=frame_ms)
 
 
-@st.cache_resource(show_spinner="Đang dựng hình 3D…", max_entries=32)  # figures: shared, read-only
+@st.cache_resource(show_spinner="Đang dựng hình 3D…", max_entries=12)  # figures: shared, read-only
 def _team_cube(folder: str, mid: str, focus: tuple, t_range: tuple, others: bool, gath: bool,
                lb: tuple = ()) -> go.Figure:
     summary, tracks = _summary(folder, mid)
@@ -68,7 +68,7 @@ def _team_cube(folder: str, mid: str, focus: tuple, t_range: tuple, others: bool
                      labels=dict(lb))
 
 
-@st.cache_resource(show_spinner=False, max_entries=32)  # figures: shared, read-only
+@st.cache_resource(show_spinner=False, max_entries=12)  # figures: shared, read-only
 def _routes(folder: str, mid: str, focus: tuple, lb: tuple) -> go.Figure:
     summary, tracks = _summary(folder, mid)
     colors = dict(zip(focus, FOCUS_COLORS, strict=False))
@@ -105,7 +105,7 @@ def dot(tm: str) -> str:
     return f'<span style="color:{colors.get(tm, "#888")};font-size:18px">●</span>'
 
 
-@st.cache_resource(show_spinner=False, max_entries=64)  # figures: shared, read-only
+@st.cache_resource(show_spinner=False, max_entries=24)  # figures: shared, read-only
 def _enc_fig(folder: str, mid: str, gid: int, mode: str, focus: tuple, lb: tuple, height: int, key: str) -> go.Figure:
     """One gathering in 3D (x, y, t) or 2D, member trajectories coloured by team (focus colours first)."""
     res_ = common.mine(folder, mid, common.params_key(default_params()))

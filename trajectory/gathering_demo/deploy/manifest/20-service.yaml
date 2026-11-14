@@ -6,8 +6,9 @@ metadata:
   labels:
     app.kubernetes.io/name: gathering-demo
   annotations:
-    # Streamlit keeps each user's session in the pod that serves its websocket: with several replicas, a reconnect
-    # (wifi blip, laptop sleep) must land on the same pod, so Traefik pins each browser with a cookie.
+    # Session affinity for Traefik (Kubernetes Ingress provider, v2/v3): Streamlit keeps each session in the pod
+    # that serves its websocket, so with several replicas every request and reconnect of a browser must reach the
+    # same pod. Traefik sets the cookie on the first response; the websocket upgrade carries it.
     traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
     traefik.ingress.kubernetes.io/service.sticky.cookie.name: gathering_affinity
     traefik.ingress.kubernetes.io/service.sticky.cookie.secure: "true"

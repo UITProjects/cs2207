@@ -1,7 +1,7 @@
 """Download the real datasets baked into the app: PGS 12 Grand Final + the newest tournaments with Erangel
 matches (fallback: newest ranked public matches), up to N Erangel matches each → data/raw/<dataset>/.
 
-    uv run python scripts/fetch_datasets.py                 # needs PUBG_API_KEY (.env) and network (WARP)
+    uv run python scripts/fetch_datasets.py                 # needs PUBG_API_KEY (.env) and network access to PUBG
     uv run python scripts/fetch_datasets.py --extra 2 --per 5
 
 Then: parse + clean each dataset, and `scripts/build_sample.py --dataset <name>` to bake it into data/sample/.
@@ -21,7 +21,7 @@ from src.datasource.pubg_api import PubgApiDataSource, TournamentDataSource  # n
 from src.ingest.crawl import crawl, filters_for, passes_filters, write_dataset_info  # noqa: E402
 
 log = logging.getLogger("fetch")
-PINNED = {"as-pgs12gf": "PGS 12 Grand Final"}  # always included (user choice)
+PINNED = {"as-pgs12gf": "PGS 12 Grand Final"}  # always included (pinned showcase tournament)
 MAX_CANDIDATES = 8  # newest tournaments inspected for Erangel matches (each costs 1 rate-limited call)
 
 

@@ -1,13 +1,17 @@
 # Implementation Spec: PUBG Gathering Pattern Demo (from `CLAUDE.MD`)
 
+> Original implementation spec (milestones M0–M8). The shipped scope evolved afterwards: the app is trajectory-only, it
+> has two pages (algorithm, result), and it uses real tournament datasets. The multi-match / coach pages were removed.
+> See `progress.md` and the README for the current state.
+
 ## Context
 The current demo in `trajectory/gathering_demo/` mines Crowd/Gathering patterns (Zheng et al., ICDE 2013) on a **fake concert dataset**. It has a good workflow (tune params → inspect each algorithm step) but fake data and a vague use case. The spec replaces it with **real PUBG trajectories** (100 players/match), a mock-first pipeline, multi-match analytics and a coach-facing application, served by a multipage Streamlit app that runs fully offline from a committed sample.
 
-Decisions made with the user:
-- **Replace in place**: project root = `trajectory/gathering_demo/` (call it `ROOT`). Old concert demo (`app.py`, `gathering_core.py`, `check_core.py`) moves to `ROOT/legacy/` as reference. The existing Dockerfile, k8s manifests (`deploy/manifest/*`), Argo app and `.github/workflows/gathering-demo.yml` are kept and updated so `cs2207.datrollout.dev/trajectory/gathering` serves the new app.
+Design decisions:
+- **Replace in place**: project root = `trajectory/gathering_demo/` (call it `ROOT`). Old concert demo (`app.py`, `gathering_core.py`, `check_core.py`) moves to `ROOT/legacy/` as reference. The existing Dockerfile, k8s manifests (`deploy/manifest/*`), Argo app and `.github/workflows/gathering-demo.yml` are kept and updated so the existing `/trajectory/gathering` route serves the new app.
 - **UI language: Vietnamese** (algorithm terms Crowd / Gathering / Participator / DBSCAN stay English), matching the old demo's style (`.streamlit/config.toml` theme, "q"/"verdict" boxes in `legacy/app.py`).
 
-Working style (overrides the spec's "stop after each milestone"): implement **end-to-end M0 → M7 without stopping**. After each milestone, log a short report (files, test commands, open issues) to `developmentNote/progress.md` and keep going. **Stop to ask the user only** (1) at the end of M7 for the PUBG API key, or (2) on a real integration problem (PUBG API/network blocked, real schema deviating from assumptions, map asset unavailable). M8 runs after the key is provided.
+Delivery: M0–M7 are built end to end on mock data, each milestone recorded in `progress.md`. M8 (real data) needs a PUBG API key.
 
 ## Cross-cutting choices
 - **Python 3.11 via uv** (`uv python install 3.11`, `pyproject.toml` + `uv.lock`), ruff + pytest. Commands run from `ROOT` as `uv run python -m src....`.
@@ -32,7 +36,7 @@ Working style (overrides the spec's "stop after each milestone"): implement **en
 - `src/datasource/base.py` (Protocol + `get_datasource()` from env `DATASOURCE` > `config.yaml`), `mock.py`, `mock_sim.py`.
 - Simulator (seeded, vectorised numpy): plane line → 25 squads jump biased to hot drops → ~8 shrinking zones emitted in `LogGameStatePeriodic` → loot then rotate toward next zone, routing through chokepoints (bridges to Military island) when crossing water → occasional vehicles → probabilistic kills, higher in dense areas → positions every ~10 s with jitter and dropped samples → `LogMatchEnd` rankings. **Scripted gatherings** (hot-drop brawls in phase 0–1, bridge camps mid-game, final-circle crowding) recorded in `ground_truth.json` (t-span, center/radius, members).
 - `src/ingest/crawl.py`: CLI over any `DataSource`; applies config filters; writes `data/raw/{source}/{match_id}/{match.json, telemetry.json.gz, ground_truth.json}`; idempotent (skips existing); logs fetched/filtered/skipped.
-- `scripts/plot_match.py` → quick PNG of one mock match over the map; I check plausibility myself (no stop).
+- `scripts/plot_match.py` → quick PNG of one mock match over the map for a visual plausibility check.
 - Test: `DATASOURCE=mock uv run python -m src.ingest.crawl --max-matches 50` (< 1 min), then the plot.
 
 ### Phase B — End-to-end on mock data
@@ -72,12 +76,12 @@ Working style (overrides the spec's "stop after each milestone"): implement **en
 **M7 — Real data source (no key)**
 - `src/api/client.py`: session with auth/gzip headers, token-bucket limiter (10 req/min for limited endpoints only; `/matches` and telemetry unlimited), 429 retry using `X-RateLimit-Reset`, `NetworkBlockedError` for reset/ConnectionError/timeouts (connect 10 s, read 60 s), ≤3 retries with backoff, never prints the key. Key from env first, then `.env`.
 - `src/datasource/pubg_api.py` (`/samples` → match IDs, `/matches/{id}`, telemetry asset URL).
-- `scripts/check_connectivity.py` (status + one telemetry CDN URL, single attempt, WARP hint), `.github/workflows/pubg-crawl.yml` (daily cron `17 20 * * *` + dispatch; crawl → parse → preprocess → upload `data/processed/` artifact, 90-day retention), `scripts/pull_cloud_data.py` (`gh run download`).
+- `scripts/check_connectivity.py` (status + one telemetry CDN URL, single attempt, clear hint when the network blocks PUBG), `.github/workflows/pubg-crawl.yml` (daily cron `17 20 * * *` + dispatch; crawl → parse → preprocess → upload `data/processed/` artifact, 90-day retention), `scripts/pull_cloud_data.py` (`gh run download`).
 - Tests with `responses`: success, 429+reset header, connection reset, missing telemetry asset — all pass with no key.
-- **STOP** and hand you the checklist: turn on WARP → `PUBG_API_KEY=...` in `ROOT/.env` → (optional) repo secret `PUBG_API_KEY` → say "key is ready".
+- Hand-off checklist for M8: network access to PUBG (VPN if blocked) → `PUBG_API_KEY=...` in `ROOT/.env` → (optional) repo secret `PUBG_API_KEY`.
 
 **M8 — Go live (after key)**
-- `check_connectivity.py` → one `/samples` call → download 1 match → `inspect_telemetry.py` → diff vs `docs/schema.md`, resolve every `UNVERIFIED`, measure real Δt, confirm `Baltic_Main`. Fix schema/parser/simulator so mock and real stay identical in shape; report any deviation to you explicitly.
+- `check_connectivity.py` → one `/samples` call → download 1 match → `inspect_telemetry.py` → diff vs `docs/schema.md`, resolve every `UNVERIFIED`, measure real Δt, confirm `Baltic_Main`. Fix schema/parser/simulator so mock and real stay identical in shape; document every deviation.
 - Save trimmed real fixtures to `tests/fixtures/real/` (anonymised); contract test passes for mock + real.
 - Crawl ~50 real matches, run pipeline, sanity check (early gatherings near Pochinki/School/Military), `build_sample.py` → `data/sample/real/`, switch app default to real (mock still selectable).
 

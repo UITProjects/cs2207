@@ -7,12 +7,11 @@ metadata:
     app.kubernetes.io/name: gathering-demo
     app.kubernetes.io/part-of: cs2207
 spec:
-  # Demo sizing (load-tested): one Streamlit pod uses ≤ 1 core (single Python process) and needs ~1 CPU-second per
-  # visitor for the full flow, ~22 MiB per open session (≈150 MiB idle, 550 MiB peak with 25 sessions on one pod).
-  # 4 × 1 CPU absorbs 40–50 people opening the link at once (~12 per pod). Total: requests 2 CPU / 1 GiB,
-  # limits 4 CPU / 3 GiB (memory requests are small on purpose: the Ready workers are at 87–98 % requested).
-  # After the demo:
-  #   set replicas back to 1 here and push (Argo CD self-heals, so `kubectl scale` alone would be reverted)
+  # Sizing for a live demo with 40–50 concurrent visitors (load-tested, see README "Sizing"):
+  # a Streamlit pod is a single Python process (~1 core usable) and needs ~1 CPU-second per visitor for the full
+  # flow and ~22 MiB per open session (~150 MiB idle). Several replicas share the load; the Service pins each
+  # browser to one pod with a sticky cookie. Totals: requests 1 CPU / 1 GiB, limits 4 CPU / 2 GiB.
+  # After the event set replicas back to 1 here (Argo CD self-heals, so `kubectl scale` alone is reverted).
   replicas: 4
   revisionHistoryLimit: 3
   strategy:
@@ -29,7 +28,7 @@ spec:
         app.kubernetes.io/name: gathering-demo
         app.kubernetes.io/part-of: cs2207
     spec:
-      # spread the replicas over the Ready nodes so one node going NotReady keeps the demo up
+      # spread replicas across nodes so losing one node does not take the demo down
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -73,11 +72,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 500m
+              cpu: 250m
               memory: 256Mi
             limits:
               cpu: "1"
-              memory: 768Mi
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

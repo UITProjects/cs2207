@@ -95,7 +95,9 @@ def datasets() -> dict[str, dict]:
                                                     "".join(chr(255 - ord(c)) for c in kv[1]["created"]))))
 
 
-@st.cache_data(show_spinner=False)
+# Read-only data is cached with st.cache_resource: one shared object per pod instead of a pickled copy per
+# session (st.cache_data), which cost ~20 MiB of memory per open session. Callers must not mutate the results.
+@st.cache_resource(show_spinner=False)
 def match_table(folder: str) -> pd.DataFrame:
     rows = []
     for m in sorted(Path(folder).iterdir()):
@@ -105,7 +107,7 @@ def match_table(folder: str) -> pd.DataFrame:
     return df.sort_values("createdAt").reset_index(drop=True) if len(df) else df
 
 
-@st.cache_data(show_spinner=False, max_entries=16)
+@st.cache_resource(show_spinner=False, max_entries=16)
 def load_labels(folder: str, match_id: str) -> dict[str, str]:
     """id → display name for teams (tag, e.g. MiTH) and players (name without the tag), from players.parquet.
     Empty when the dataset keeps no names (then ids are shown)."""
@@ -118,12 +120,12 @@ def load_labels(folder: str, match_id: str) -> dict[str, str]:
     return out
 
 
-@st.cache_data(show_spinner="Đang đọc dữ liệu trận…", max_entries=8)
+@st.cache_resource(show_spinner="Đang đọc dữ liệu trận…", max_entries=8)
 def load_match(folder: str, match_id: str) -> dict:
     return read_tables(Path(folder) / match_id)
 
 
-@st.cache_data(show_spinner="Đang khai phá (DBSCAN → Crowd → TAD)…", max_entries=32)
+@st.cache_resource(show_spinner="Đang khai phá (DBSCAN → Crowd → TAD)…", max_entries=24)
 def mine(folder: str, match_id: str, params_items: tuple) -> MiningResult:
     res = run_pipeline(load_match(folder, match_id), dict(params_items))
     for df in (res.crowd_df, res.gathering_df):

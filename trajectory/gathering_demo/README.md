@@ -28,7 +28,7 @@ How they were chosen (`scripts/fetch_datasets.py`, needs the key): PGS 12 Grand 
 
 Refresh: `uv run python scripts/fetch_datasets.py`, then `parse` / `clean` / `build_sample.py --dataset <name>` per dataset (below), then rebuild the image. The raw downloads in `data/raw/<name>/` (about 23 MB) are **committed**, so teammates can re-parse without a key. Mock raw data is regenerated, not committed. The image only copies the processed parquet in `data/sample/` (about 1.5 MB); `.dockerignore` excludes `data/raw`.
 
-Served at `https://cs2207.datrollout.dev/trajectory/gathering/`. The previous concert demo lives in `legacy/`.
+The app is served under the path `/trajectory/gathering/`; the public host is configured in `deploy/manifest/40-ingress.yaml`. The previous concert demo lives in `legacy/`.
 
 ## Install
 
@@ -73,7 +73,7 @@ Other helper scripts:
 | `scripts/stats.py` | points/match, Δt, clusters per t, crowds/gatherings per phase |
 | `scripts/plot_match.py <raw match dir>` | PNG of one raw match (+ mock ground truth) on the map |
 | `scripts/calibrate_places.py` | overlay of `assets/erangel_places.yaml` on the map |
-| `scripts/check_connectivity.py` | can this network reach PUBG? (WARP hint) |
+| `scripts/check_connectivity.py` | can this network reach the PUBG API and telemetry CDN? |
 | `scripts/pull_cloud_data.py` | download processed data from the GitHub Actions crawler |
 
 ## Layout
@@ -102,7 +102,7 @@ uv run pytest            # synthetic mining cases, parser contract (mock + tests
 
 ## Real PUBG data
 
-1. The ISP may reset connections to PUBG domains. Turn on **Cloudflare WARP** first, then run `uv run python scripts/check_connectivity.py`.
+1. Run `uv run python scripts/check_connectivity.py`. Some networks reset connections to PUBG domains. If it reports the network as blocked, use a VPN (e.g. Cloudflare WARP) or the cloud crawler below.
 2. Put `PUBG_API_KEY=...` in `trajectory/gathering_demo/.env` (gitignored; see `.env.example`). The key is read from the environment first, then from `.env`, and is never printed.
 3. Tournaments: `scripts/fetch_datasets.py` or `src.ingest.crawl --tournament <id>` (above). Public samples: `DATASOURCE=pubg uv run python -m src.ingest.crawl --max-matches 50` (it scans up to 400 sample ids per wanted match, because most samples are other maps/modes).
 4. Real-data findings (M8, details in `docs/schema.md`):
@@ -114,7 +114,7 @@ uv run pytest            # synthetic mining cases, parser contract (mock + tests
 
 ### Cloud crawler (GitHub Actions)
 
-`.github/workflows/pubg-crawl.yml` runs daily at 20:17 UTC (03:17 Vietnam time) and can also be started by hand. It crawls, then parses and cleans in the same job, and uploads `data/processed/` as an artifact kept for 90 days. It never commits to `main`.
+`.github/workflows/pubg-crawl.yml` runs daily at 20:17 UTC and can also be started by hand. It crawls, then parses and cleans in the same job, and uploads `data/processed/` as an artifact kept for 90 days. It never commits to `main`.
 
 - Add the repository secret **`PUBG_API_KEY`** (Settings → Secrets and variables → Actions).
 - Start a run by hand from Actions → *pubg-crawl* → *Run workflow*.
@@ -138,9 +138,11 @@ Load-tested with real headless browsers against one container at the pod limits.
 | lazy tabs (only the open tab runs) + figures in `st.cache_resource` (no per-session unpickle, which re-validated every Plotly trace, about 0.3 s per figure) | 1.7 s | 35 s |
 | + file watcher off in the image | **1.05 s** | **26 s** |
 
-A warm page rerun is 0.08 s of CPU. A Streamlit pod is one Python process, so it uses at most about 1 core. The manifest therefore runs **4 replicas × (request 500m / 256 MiB, limit 1 CPU / 768 MiB)**: 2 CPU requested, 4 CPU limit, about 12 people per pod. One pod at these limits handled 13 concurrent sessions with no errors, peaking at 410 MiB with no OOM.
+A warm page rerun is 0.08 s of CPU. A Streamlit pod is one Python process, so it uses at most about 1 core. Read-only data and figures are cached with `st.cache_resource` (one shared copy per pod). With `st.cache_data`, every session held its own copy, about 20 MiB each.
 
-The pods spread over the nodes (`topologySpreadConstraints`). A PodDisruptionBudget keeps 2 pods up during drains. **Traefik sticky cookies** (Service annotations) keep each browser on the pod that holds its Streamlit session. Memory requests are deliberately small because the Ready workers sit at 87–98% of memory requested.
+The manifest runs **4 replicas × (request 250m CPU / 256 MiB, limit 1 CPU / 512 MiB)**, which totals **request 1 CPU / 1 GiB and limit 4 CPU / 2 GiB**, about 12 visitors per pod. One pod at these limits served 13 concurrent visitors, then 13 more who switched datasets, with 26 sessions alive at once: no errors, peak 384 MiB.
+
+The pods spread across nodes (`topologySpreadConstraints`). A PodDisruptionBudget keeps 2 pods up during node drains. **Traefik sticky cookies** (Service annotations) keep each browser on the pod that holds its Streamlit session.
 
 After the demo: set `replicas: 1` in `deploy/manifest/10-deployment.yaml` and push. Argo CD self-heals, so a plain `kubectl scale` would be reverted.
 - `requirements.txt` is generated with `uv export --no-dev --no-hashes --format requirements-txt` plus `pytest` (used for the build-time check).
