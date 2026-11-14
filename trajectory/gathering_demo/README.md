@@ -26,7 +26,7 @@ The 3D views are drawn by `src/viz/cube.py`. There is no kill or ranking content
 
 How they were chosen (`scripts/fetch_datasets.py`, needs the key): PGS 12 Grand Final (pinned), then the 2 newest tournaments from `/tournaments` that have Erangel matches. If fewer qualify, the script falls back to the newest **ranked** public matches. Public "official" matches are mostly AI bots (38 humans / 105 characters in our probe), so they are not used. Each `dataset.json` holds the label, kind, `show_names` and the showcase match (the one with the best gathering coverage, ★ in the picker).
 
-Refresh: `uv run python scripts/fetch_datasets.py`, then `parse` / `clean` / `build_sample.py --dataset <name>` per dataset (below), then rebuild the image. The raw downloads stay in `data/raw/<name>/` (gitignored, about 23 MB); only the processed parquet (about 1.5 MB) is committed and copied by the Dockerfile (`COPY data/sample/`).
+Refresh: `uv run python scripts/fetch_datasets.py`, then `parse` / `clean` / `build_sample.py --dataset <name>` per dataset (below), then rebuild the image. The raw downloads in `data/raw/<name>/` (about 23 MB) are **committed**, so teammates can re-parse without a key. Mock raw data is regenerated, not committed. The image only copies the processed parquet in `data/sample/` (about 1.5 MB); `.dockerignore` excludes `data/raw`.
 
 Served at `https://cs2207.datrollout.dev/trajectory/gathering/`. The previous concert demo lives in `legacy/`.
 
@@ -124,14 +124,36 @@ PUBG keeps match data for only 14 days, so leave the daily schedule on.
 
 ## Deploy
 
-- `Dockerfile` (python:3.11-slim) copies `app/ src/ assets/ config.yaml data/sample/`. At build time it runs the synthetic mining and parser tests plus the full pipeline on one sample match, so a broken algorithm fails the build. The container serves on 8501.
+- `Dockerfile` (python:3.11-slim) copies `app/ src/ assets/ config.yaml data/sample/`, so every dataset is inside the image and no volume is needed. At build time it runs the synthetic mining tests and the parser contract (mock + real fixture), and checks that every baked dataset has a gathering. The container serves on 8501 with the source file watcher off (`--server.fileWatcherType=none`), which was about 70% of server CPU in a profile.
 - CI: `.github/workflows/gathering-demo.yml` builds a multi-arch image on pushes to `main`, then bumps the tag in `deploy/manifest/10-deployment.yaml`. Argo CD (`deploy/argo-app.yaml`) syncs it. The manifest sets `STREAMLIT_SERVER_BASE_URL_PATH=trajectory/gathering`.
 - Local: `docker build -t gathering-demo . && docker run -p 8501:8501 gathering-demo`.
+
+### Sizing for the live demo (40–50 people at once)
+
+Load-tested with real headless browsers against one container at the pod limits. Each session ran the algorithm page, then the result page, then the gathering tab:
+
+| Change | CPU per visitor (full flow) | 10 visitors at once on 1 CPU |
+|---|---|---|
+| before | ~3 s+ | 54 s each |
+| lazy tabs (only the open tab runs) + figures in `st.cache_resource` (no per-session unpickle, which re-validated every Plotly trace, about 0.3 s per figure) | 1.7 s | 35 s |
+| + file watcher off in the image | **1.05 s** | **26 s** |
+
+A warm page rerun is 0.08 s of CPU. A Streamlit pod is one Python process, so it uses at most about 1 core. The manifest therefore runs **4 replicas × (request 500m / 256 MiB, limit 1 CPU / 768 MiB)**: 2 CPU requested, 4 CPU limit, about 12 people per pod. One pod at these limits handled 13 concurrent sessions with no errors, peaking at 410 MiB with no OOM.
+
+The pods spread over the nodes (`topologySpreadConstraints`). A PodDisruptionBudget keeps 2 pods up during drains. **Traefik sticky cookies** (Service annotations) keep each browser on the pod that holds its Streamlit session. Memory requests are deliberately small because the Ready workers sit at 87–98% of memory requested.
+
+After the demo: set `replicas: 1` in `deploy/manifest/10-deployment.yaml` and push. Argo CD self-heals, so a plain `kubectl scale` would be reverted.
 - `requirements.txt` is generated with `uv export --no-dev --no-hashes --format requirements-txt` plus `pytest` (used for the build-time check).
 
 ### Streamlit Community Cloud
 
 Point a new app at this repo with main file `trajectory/gathering_demo/app/Home.py` and Python 3.11. The app adds its project root to `sys.path` and reads `data/sample/`, so no secrets are needed. Copy the theme from `.streamlit/config.toml` into the app's settings if Cloud does not pick it up from the subfolder.
+
+## Data and trademarks
+
+The tournament data in `data/raw/` (raw API responses + telemetry) and `data/sample/` (processed) comes from the PUBG Developer API under the [PUBG API Terms](https://developer.pubg.com/tos). It is committed so teammates can re-parse and edit it without a key. It is part of this non-commercial course demo, not a stand-alone dataset, and it is not covered by the repo's license; see `data/raw/NOTICE.md`. The map image comes from [`pubg/api-assets`](https://github.com/pubg/api-assets) under the same terms.
+
+PUBG, PLAYERUNKNOWN'S BATTLEGROUNDS and all related logos are trademarks of PUBG Corporation or its affiliates. This project is not affiliated with or endorsed by PUBG Corporation or KRAFTON.
 
 ## Limitations
 

@@ -40,7 +40,10 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
 
-# .streamlit/config.toml in /app holds the theme; the base URL path comes from the k8s manifest env
+# .streamlit/config.toml in /app holds the theme; the base URL path comes from the k8s manifest env.
+# fileWatcherType=none: the source watcher re-resolves every imported module's path on each script run of each
+# session (≈ 70 % of server CPU in a profile); code never changes inside the image, so it is pure waste here.
 CMD ["streamlit", "run", "app/Home.py", \
      "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", \
+     "--server.fileWatcherType=none", "--server.runOnSave=false", \
      "--browser.gatherUsageStats=false"]

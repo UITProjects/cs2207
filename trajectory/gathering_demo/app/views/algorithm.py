@@ -54,7 +54,7 @@ def crowd_label(i: int) -> str:
     return f"Cr{i + 1} · {cdf.loc[i, 'place']} · {fmt_t(cdf.loc[i, 't_start'])}–{fmt_t(cdf.loc[i, 't_end'])}"
 
 
-@st.cache_data(show_spinner="Đang dựng hình 3D…", max_entries=32)
+@st.cache_resource(show_spinner="Đang dựng hình 3D…", max_entries=64)  # figures: shared, read-only (no per-session copy)
 def _cube(folder: str, mid: str, pk: tuple, mode: str, view: tuple, t_lo: float, t_hi: float,
           crowd: int | None, noise: bool, connect: bool, teams: tuple, by: str, colors: tuple,
           labels: tuple = ()) -> go.Figure:
@@ -104,155 +104,161 @@ def cube(mode: str, view, lo, hi, crowd, key: str, noise_toggle: bool = False) -
 
 
 pk = common.params_key(P)
-tab1, tab2, tab3, tab4 = st.tabs(["① Quỹ đạo", "② Cụm snapshot", "③ Crowd", "④ Gathering"])
+TABS = ["① Quỹ đạo", "② Cụm snapshot", "③ Crowd", "④ Gathering"]
+tab1, tab2, tab3, tab4 = st.tabs(TABS, key="algo_tab", on_change="rerun")
+ACTIVE = st.session_state.get("algo_tab") or TABS[0]
 by_t: dict[int, list] = {}
 for cl in res.clusters:
     by_t.setdefault(cl.t, []).append(cl)
 
 with tab1:
-    if is3d:
-        view, lo, hi, cr = window_row("raw")
-        cube("raw", view, lo, hi, cr, "raw")
-    else:
-        st.plotly_chart(animation(pos, zones, labels=labels), width="stretch")
+    if ACTIVE == TABS[0]:  # only the open tab does its work
+        if is3d:
+            view, lo, hi, cr = window_row("raw")
+            cube("raw", view, lo, hi, cr, "raw")
+        else:
+            st.plotly_chart(animation(pos, zones, labels=labels), width="stretch")
 
 with tab2:
-    st.caption(f"DBSCAN eps = {P['eps']} m · min_pts = {P['min_pts']} · đĩa đậm = cụm ≥ m_c = {P['m_c']}")
-    if is3d:
-        view, lo, hi, cr = window_row("clusters")
-        cube("clusters", view, lo, hi, cr, "clusters", noise_toggle=True)
-    else:
-        busiest = max(times, key=lambda x: sum(c.size >= P["m_c"] for c in by_t.get(x, [])), default=times[0])
-        tt = st.select_slider("Mốc t", options=times, value=busiest, format_func=fmt_t, key="t_snap")
-        lab = res.labels[res.labels["t"] == tt]
-        cls = by_t.get(tt, [])
-        big = [c for c in cls if c.size >= P["m_c"]]
-        view = None
-        if st.checkbox("Phóng to vào các cụm ≥ m_c", value=False) and big:
-            allp = np.vstack([c.pts for c in big])
-            lo_, hi_ = allp.min(0), allp.max(0)
-            view = zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 100, pad=1.2)
-        fig = base_map(660, view)
-        noise = lab[lab["cluster"] < 0]
-        fig.add_trace(go.Scatter(x=noise["x"], y=noise["y"], mode="markers", name="nhiễu",
-                                 marker=dict(size=6, color=NOISE), text=noise["player"].map(L), hoverinfo="text"))
-        for i, cl in enumerate(cls):
-            col = CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
-            strong = cl.size >= P["m_c"]
-            fig.add_trace(hull_trace(cl.pts, col, f"c{cl.k} ({cl.size})", opacity=0.35 if strong else 0.15))
-            fig.add_trace(go.Scatter(x=cl.pts[:, 0], y=cl.pts[:, 1], mode="markers", name=f"c{cl.k} · {cl.size}",
-                                     marker=dict(size=8, color=col, line=dict(width=1, color="black")),
-                                     text=[L(m) for m in cl.members], hoverinfo="text"))
-            cx, cy = cl.centroid
-            fig.add_annotation(x=cx, y=cy, text=f"<b>{cl.size}</b>", showarrow=False, yshift=-18,
-                               font=dict(color="white" if strong else "#ddd", size=13 if strong else 10))
-        fig.update_layout(shapes=zone_shapes(zones, tt), title=f"t = {fmt_t(tt)} · {len(cls)} cụm, {len(big)} ≥ m_c")
-        st.plotly_chart(fig, width="stretch")
+    if ACTIVE == TABS[1]:  # only the open tab does its work
+        st.caption(f"DBSCAN eps = {P['eps']} m · min_pts = {P['min_pts']} · đĩa đậm = cụm ≥ m_c = {P['m_c']}")
+        if is3d:
+            view, lo, hi, cr = window_row("clusters")
+            cube("clusters", view, lo, hi, cr, "clusters", noise_toggle=True)
+        else:
+            busiest = max(times, key=lambda x: sum(c.size >= P["m_c"] for c in by_t.get(x, [])), default=times[0])
+            tt = st.select_slider("Mốc t", options=times, value=busiest, format_func=fmt_t, key="t_snap")
+            lab = res.labels[res.labels["t"] == tt]
+            cls = by_t.get(tt, [])
+            big = [c for c in cls if c.size >= P["m_c"]]
+            view = None
+            if st.checkbox("Phóng to vào các cụm ≥ m_c", value=False) and big:
+                allp = np.vstack([c.pts for c in big])
+                lo_, hi_ = allp.min(0), allp.max(0)
+                view = zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 100, pad=1.2)
+            fig = base_map(660, view)
+            noise = lab[lab["cluster"] < 0]
+            fig.add_trace(go.Scatter(x=noise["x"], y=noise["y"], mode="markers", name="nhiễu",
+                                     marker=dict(size=6, color=NOISE), text=noise["player"].map(L), hoverinfo="text"))
+            for i, cl in enumerate(cls):
+                col = CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
+                strong = cl.size >= P["m_c"]
+                fig.add_trace(hull_trace(cl.pts, col, f"c{cl.k} ({cl.size})", opacity=0.35 if strong else 0.15))
+                fig.add_trace(go.Scatter(x=cl.pts[:, 0], y=cl.pts[:, 1], mode="markers", name=f"c{cl.k} · {cl.size}",
+                                         marker=dict(size=8, color=col, line=dict(width=1, color="black")),
+                                         text=[L(m) for m in cl.members], hoverinfo="text"))
+                cx, cy = cl.centroid
+                fig.add_annotation(x=cx, y=cy, text=f"<b>{cl.size}</b>", showarrow=False, yshift=-18,
+                                   font=dict(color="white" if strong else "#ddd", size=13 if strong else 10))
+            fig.update_layout(shapes=zone_shapes(zones, tt), title=f"t = {fmt_t(tt)} · {len(cls)} cụm, {len(big)} ≥ m_c")
+            st.plotly_chart(fig, width="stretch")
 
 link_d = {(lk.a, lk.b): lk.dH for lk in res.links}
 
 with tab3:
-    st.caption(f"m_c = {P['m_c']} · δ = {P['delta']} m · k_c = {P['k_c']} bước")
-    if cdf.empty:
-        verdict("Không có crowd với tham số hiện tại.", False)
-    else:
-        view_df = pd.DataFrame({
-            "crowd": [f"Cr{i + 1}" for i in cdf["id"]], "bắt đầu": cdf["t_start"].map(fmt_t),
-            "kết thúc": cdf["t_end"].map(fmt_t), "bước": cdf["lifetime"], "cỡ TB": cdf["mean_size"].round(1),
-            "phase": cdf["phase"], "địa điểm": cdf["place"],
-            "→ Gathering?": ["✓" if i in gcrowds else "✗" for i in cdf["id"]]})
-        st.dataframe(view_df, hide_index=True, width="stretch", height=min(38 * len(cdf) + 40, 260))
-        ci = st.selectbox("Crowd", list(cdf["id"]), format_func=crowd_label, key="crowd_sel")
-        seq = res.crowds[ci]
-        cs = [res.clusters[i] for i in seq]
-        a, b = st.columns([3, 2])
-        with a:
-            if is3d:
-                view, lo, hi = crowd_window(res, ci)
-                cube("crowds", view, lo, hi, ci, "crowds")
-            else:
-                allp = np.vstack([c.pts for c in cs])
-                lo_, hi_ = allp.min(0), allp.max(0)
-                fig = base_map(600, zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 80, pad=1.15))
-                for j, cl in enumerate(cs):
-                    fig.add_trace(hull_trace(cl.pts, "#ff924c", f"{fmt_t(cl.t)} · {cl.size}",
-                                             opacity=0.06 + 0.5 * (j + 1) / len(cs)))
-                cen = np.array([c.centroid for c in cs])
-                fig.add_trace(go.Scatter(x=cen[:, 0], y=cen[:, 1], mode="lines+markers", name="tâm",
-                                         line=dict(color="white", width=2), marker=dict(size=5, color="white")))
-                fig.update_layout(title=f"Cr{ci + 1}: {len(cs)} cụm liên tiếp", shapes=zone_shapes(zones, cs[-1].t))
-                st.plotly_chart(fig, width="stretch")
-        with b:
-            d = [link_d.get((cs[j].id, cs[j + 1].id)) for j in range(len(cs) - 1)]
-            hf = go.Figure(go.Bar(x=[fmt_t(cs[j + 1].t) for j in range(len(d))], y=d, marker_color="#1982c4"))
-            hf.add_hline(y=P["delta"], line_dash="dash", line_color="#B8541C", annotation_text=f"δ = {P['delta']} m")
-            hf.update_layout(height=280, title="d_H giữa hai cụm liên tiếp", yaxis_title="m",
-                             margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(hf, width="stretch")
-            sz = go.Figure(go.Bar(x=[fmt_t(c.t) for c in cs], y=[c.size for c in cs], marker_color="#ff924c"))
-            sz.add_hline(y=P["m_c"], line_dash="dash", line_color="#B8541C", annotation_text=f"m_c = {P['m_c']}")
-            sz.update_layout(height=250, title="Cỡ cụm", margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(sz, width="stretch")
+    if ACTIVE == TABS[2]:  # only the open tab does its work
+        st.caption(f"m_c = {P['m_c']} · δ = {P['delta']} m · k_c = {P['k_c']} bước")
+        if cdf.empty:
+            verdict("Không có crowd với tham số hiện tại.", False)
+        else:
+            view_df = pd.DataFrame({
+                "crowd": [f"Cr{i + 1}" for i in cdf["id"]], "bắt đầu": cdf["t_start"].map(fmt_t),
+                "kết thúc": cdf["t_end"].map(fmt_t), "bước": cdf["lifetime"], "cỡ TB": cdf["mean_size"].round(1),
+                "phase": cdf["phase"], "địa điểm": cdf["place"],
+                "→ Gathering?": ["✓" if i in gcrowds else "✗" for i in cdf["id"]]})
+            st.dataframe(view_df, hide_index=True, width="stretch", height=min(38 * len(cdf) + 40, 260))
+            ci = st.selectbox("Crowd", list(cdf["id"]), format_func=crowd_label, key="crowd_sel")
+            seq = res.crowds[ci]
+            cs = [res.clusters[i] for i in seq]
+            a, b = st.columns([3, 2])
+            with a:
+                if is3d:
+                    view, lo, hi = crowd_window(res, ci)
+                    cube("crowds", view, lo, hi, ci, "crowds")
+                else:
+                    allp = np.vstack([c.pts for c in cs])
+                    lo_, hi_ = allp.min(0), allp.max(0)
+                    fig = base_map(600, zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 80, pad=1.15))
+                    for j, cl in enumerate(cs):
+                        fig.add_trace(hull_trace(cl.pts, "#ff924c", f"{fmt_t(cl.t)} · {cl.size}",
+                                                 opacity=0.06 + 0.5 * (j + 1) / len(cs)))
+                    cen = np.array([c.centroid for c in cs])
+                    fig.add_trace(go.Scatter(x=cen[:, 0], y=cen[:, 1], mode="lines+markers", name="tâm",
+                                             line=dict(color="white", width=2), marker=dict(size=5, color="white")))
+                    fig.update_layout(title=f"Cr{ci + 1}: {len(cs)} cụm liên tiếp", shapes=zone_shapes(zones, cs[-1].t))
+                    st.plotly_chart(fig, width="stretch")
+            with b:
+                d = [link_d.get((cs[j].id, cs[j + 1].id)) for j in range(len(cs) - 1)]
+                hf = go.Figure(go.Bar(x=[fmt_t(cs[j + 1].t) for j in range(len(d))], y=d, marker_color="#1982c4"))
+                hf.add_hline(y=P["delta"], line_dash="dash", line_color="#B8541C", annotation_text=f"δ = {P['delta']} m")
+                hf.update_layout(height=280, title="d_H giữa hai cụm liên tiếp", yaxis_title="m",
+                                 margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(hf, width="stretch")
+                sz = go.Figure(go.Bar(x=[fmt_t(c.t) for c in cs], y=[c.size for c in cs], marker_color="#ff924c"))
+                sz.add_hline(y=P["m_c"], line_dash="dash", line_color="#B8541C", annotation_text=f"m_c = {P['m_c']}")
+                sz.update_layout(height=250, title="Cỡ cụm", margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(sz, width="stretch")
 
 with tab4:
-    st.caption(f"k_p = {P['k_p']} · m_p = {P['m_p']} · nét đậm = có participator · nét mảnh đứt = chỉ đi qua · "
-               "đĩa xanh = cụm thuộc gathering")
-    gdf = res.gathering_df
-    if cdf.empty:
-        verdict("Chưa có crowd nên chưa có gathering.", False)
-    else:
-        ci2 = st.selectbox("Crowd", list(cdf["id"]), key="tad_sel",
-                           format_func=lambda i: f"{crowd_label(i)} · {'✓ gathering' if i in gcrowds else '✗'}")
-        td = res.tads[ci2]
-        seq = res.crowds[ci2]
-        a, b = st.columns([3, 2])
-        with b:
-            lines = []
-            for step in td["trace"]:
-                span = np.where(step["mask"])[0]
-                rng_s = f"bước {span[0] + 1}–{span[-1] + 1}"
-                if step["kind"] == "test":
-                    lines.append(f"<li><b>Test</b> {rng_s}: {len(step['par'])} participator; "
-                                 + (f"{len(step['bad'])} cụm &lt; m_p ✗" if step["bad"] else "<b>Gathering</b> ✓")
-                                 + "</li>")
+    if ACTIVE == TABS[3]:  # only the open tab does its work
+        st.caption(f"k_p = {P['k_p']} · m_p = {P['m_p']} · nét đậm = có participator · nét mảnh đứt = chỉ đi qua · "
+                   "đĩa xanh = cụm thuộc gathering")
+        gdf = res.gathering_df
+        if cdf.empty:
+            verdict("Chưa có crowd nên chưa có gathering.", False)
+        else:
+            ci2 = st.selectbox("Crowd", list(cdf["id"]), key="tad_sel",
+                               format_func=lambda i: f"{crowd_label(i)} · {'✓ gathering' if i in gcrowds else '✗'}")
+            td = res.tads[ci2]
+            seq = res.crowds[ci2]
+            a, b = st.columns([3, 2])
+            with b:
+                lines = []
+                for step in td["trace"]:
+                    span = np.where(step["mask"])[0]
+                    rng_s = f"bước {span[0] + 1}–{span[-1] + 1}"
+                    if step["kind"] == "test":
+                        lines.append(f"<li><b>Test</b> {rng_s}: {len(step['par'])} participator; "
+                                     + (f"{len(step['bad'])} cụm &lt; m_p ✗" if step["bad"] else "<b>Gathering</b> ✓")
+                                     + "</li>")
+                    else:
+                        parts = ", ".join(f"{p['tau']} bước{'' if p['ok'] else ' (&lt; k_c)'}" for p in step["parts"])
+                        lines.append(f"<li><b>Divide</b>: cắt {len(step['bad'])} cụm → {parts or '∅'}</li>")
+                verdict("<b>TAD</b><ul style='margin:4px 0 0'>" + "".join(lines) + "</ul>", bool(td["gatherings"]))
+                first = td["trace"][0]
+                counts = [max(x, 0) for x in first["counts"]]
+                bf = go.Figure(go.Bar(x=[fmt_t(res.clusters[i].t) for i in seq], y=counts, name="participator",
+                                      marker_color=["#8ac926" if x >= P["m_p"] else "#ff595e" for x in counts]))
+                bf.add_trace(go.Bar(x=[fmt_t(res.clusters[i].t) for i in seq],
+                                    y=[res.clusters[i].size - c for i, c in zip(seq, counts, strict=True)],
+                                    marker_color="#ccc", name="khác"))
+                bf.add_hline(y=P["m_p"], line_dash="dash", line_color="#B8541C", annotation_text=f"m_p = {P['m_p']}")
+                bf.update_layout(barmode="stack", height=280, margin=dict(l=10, r=10, t=40, b=10),
+                                 title="Participator mỗi cụm", legend=dict(orientation="h", y=-0.25))
+                st.plotly_chart(bf, width="stretch")
+                mine_g = [(k, g, par) for k, (g, par, cidx) in enumerate(res.gatherings) if cidx == ci2]
+                for k, _, par in mine_g:
+                    row = gdf.loc[k]
+                    st.markdown(f"**G{k + 1}** · {row['place']} · {fmt_t(row['t_start'])}–{fmt_t(row['t_end'])} · "
+                                f"{len(par)} participator · {', '.join(L(tm) for tm in row['teams'])}")
+            with a:
+                if is3d:
+                    view, lo, hi = crowd_window(res, ci2)
+                    cube("participators", view, lo, hi, ci2, "par")
+                elif mine_g:
+                    k, g, par = mine_g[0]
+                    row = gdf.loc[k]
+                    cs = [res.clusters[i] for i in g]
+                    allp = np.vstack([c.pts for c in cs])
+                    lo_, hi_ = allp.min(0), allp.max(0)
+                    view = zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 150, pad=1.2)
+                    win = pos[(pos["t"] >= row["t_start"] - 60) & (pos["t"] <= row["t_end"] + 60)
+                              & pos["x"].between(view[0], view[2]) & pos["y"].between(view[1], view[3])]
+                    st.plotly_chart(animation(win, zones, highlight=set(par), view=view, height=600, frame_ms=350,
+                                              labels=labels),
+                                    width="stretch")
                 else:
-                    parts = ", ".join(f"{p['tau']} bước{'' if p['ok'] else ' (&lt; k_c)'}" for p in step["parts"])
-                    lines.append(f"<li><b>Divide</b>: cắt {len(step['bad'])} cụm → {parts or '∅'}</li>")
-            verdict("<b>TAD</b><ul style='margin:4px 0 0'>" + "".join(lines) + "</ul>", bool(td["gatherings"]))
-            first = td["trace"][0]
-            counts = [max(x, 0) for x in first["counts"]]
-            bf = go.Figure(go.Bar(x=[fmt_t(res.clusters[i].t) for i in seq], y=counts, name="participator",
-                                  marker_color=["#8ac926" if x >= P["m_p"] else "#ff595e" for x in counts]))
-            bf.add_trace(go.Bar(x=[fmt_t(res.clusters[i].t) for i in seq],
-                                y=[res.clusters[i].size - c for i, c in zip(seq, counts, strict=True)],
-                                marker_color="#ccc", name="khác"))
-            bf.add_hline(y=P["m_p"], line_dash="dash", line_color="#B8541C", annotation_text=f"m_p = {P['m_p']}")
-            bf.update_layout(barmode="stack", height=280, margin=dict(l=10, r=10, t=40, b=10),
-                             title="Participator mỗi cụm", legend=dict(orientation="h", y=-0.25))
-            st.plotly_chart(bf, width="stretch")
-            mine_g = [(k, g, par) for k, (g, par, cidx) in enumerate(res.gatherings) if cidx == ci2]
-            for k, _, par in mine_g:
-                row = gdf.loc[k]
-                st.markdown(f"**G{k + 1}** · {row['place']} · {fmt_t(row['t_start'])}–{fmt_t(row['t_end'])} · "
-                            f"{len(par)} participator · {', '.join(L(tm) for tm in row['teams'])}")
-        with a:
-            if is3d:
-                view, lo, hi = crowd_window(res, ci2)
-                cube("participators", view, lo, hi, ci2, "par")
-            elif mine_g:
-                k, g, par = mine_g[0]
-                row = gdf.loc[k]
-                cs = [res.clusters[i] for i in g]
-                allp = np.vstack([c.pts for c in cs])
-                lo_, hi_ = allp.min(0), allp.max(0)
-                view = zoom_box(*(lo_ + hi_) / 2, max(hi_ - lo_) / 2 + 150, pad=1.2)
-                win = pos[(pos["t"] >= row["t_start"] - 60) & (pos["t"] <= row["t_end"] + 60)
-                          & pos["x"].between(view[0], view[2]) & pos["y"].between(view[1], view[3])]
-                st.plotly_chart(animation(win, zones, highlight=set(par), view=view, height=600, frame_ms=350,
-                                          labels=labels),
-                                width="stretch")
-            else:
-                verdict("Crowd này không có gathering.", False)
+                    verdict("Crowd này không có gathering.", False)
 
 st.divider()
 st.page_link("views/match.py", label="Xem kết quả: các đội di chuyển và tụ họp ở đâu →", icon="🎯")

@@ -223,6 +223,8 @@ def sidebar(match_picker: bool = True, params: bool = True) -> dict:
         st.sidebar.caption("Ràng buộc: k_p ≤ k_c, m_p ≤ m_c. Δt = 10 s.")
         st.session_state["_params"] = dict(vals)
         out["params"] = vals
+    st.sidebar.caption("Dữ liệu: PUBG Developer API. PUBG, PLAYERUNKNOWN'S BATTLEGROUNDS and all related logos are "
+                       "trademarks of PUBG Corporation or its affiliates. Không liên kết với PUBG Corporation.")
     return out
 
 

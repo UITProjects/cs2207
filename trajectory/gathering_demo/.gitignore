@@ -1,5 +1,9 @@
 .env
-data/raw/
+# raw downloads: tournament datasets are committed so teammates can re-parse without an API key;
+# mock is regenerated deterministically, public `pubg` samples hold bots + non-pro player names
+data/raw/mock/
+data/raw/pubg/
+data/raw/**/*.tmp
 data/processed/
 !data/sample/
 assets/maps/*_full.*

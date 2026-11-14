@@ -162,3 +162,22 @@ User: "keep pages, components only related to trajectory" and "make the algorith
   - choices persist across pages (fixed: page switch reset the selectbox to its first option → shadow key + on_change).
 - **Dockerfile:** the build check runs the parser contract (mock + real fixture) and asserts every baked dataset has a gathering. `docker build` OK; the image lists the 4 datasets, has no `.env`, health ok.
 - **Tests:** new `tests/test_real.py` (names only when kept, team tag, bots, lobby, tournament filters, mocked tournament source, dataset discovery) + real fixture `tests/fixtures/real/` (trimmed PGS match, names masked) + app tests for the dataset/match pickers and names. **54 passed, ruff clean.**
+
+## M9 — Raw data committed, home-lab deploy readiness, sizing for 40–50 users (2026-11-14)
+- User decision: commit the tournament raw data (`data/raw/as-pgs12gf|sea-pacp26|sea-paci26`, about 23 MB) to the public repo so teammates can re-parse without a key. Mock and public `pubg` raw data stay ignored.
+  - Added `data/raw/NOTICE.md` + `data/sample/NOTICE.md` (PUBG API ToS, not stand-alone, not under the repo's MIT license, removal on request) and the PUBG trademark statement required by the ToS in the README and the app sidebar.
+  - Flagged to the user: the ToS forbid distributing API data "on a stand-alone basis".
+- Cluster (read-only checks): 6 nodes, all amd64; **master-nodes-2 and worker-nodes-2 NotReady**. The Ready workers sit at 87% / 98% of memory requested. Argo CD app Synced/Healthy, still running the old image `sha-d9d87b1`.
+- Image validated with the cluster's settings (uid 1000, cap-drop ALL, no-new-privileges, base path `trajectory/gathering`, 1 CPU / 768 MiB). `kubectl apply --dry-run=server` accepts every manifest.
+- **Performance** (profiled; load-tested with real headless browsers):
+  1. lazy tabs (`st.tabs(key, on_change="rerun")`, only the open tab runs);
+  2. figures cached with `st.cache_resource` (an `st.cache_data` copy unpickled each Plotly figure with full validation, about 0.3 s each);
+  3. `--server.fileWatcherType=none` in the image (the watcher was about 70% of server CPU).
+  
+  CPU per visitor full flow: about 3 s → 1.05 s. 10 concurrent on 1 CPU: 54 s → 26 s.
+- **Manifests** (user budget: CPU request 2 / limit 4):
+  - replicas 4 × (500m / 256 MiB request, 1 CPU / 768 MiB limit), topology spread, PDB minAvailable 2;
+  - Traefik sticky cookie on the Service (Streamlit sessions live in one pod).
+  
+  One pod at these limits: 13 concurrent sessions OK, 410 MiB peak, no OOM.
+- Deploy = merge this branch into `main` (the CI builds the image, bumps the tag, Argo CD syncs). Not pushed: the user does it.

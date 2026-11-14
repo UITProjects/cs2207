@@ -67,6 +67,8 @@ def test_match_cube_toggles_and_encounter_2d():
     at.toggle(key="cube_others").set_value(False).run()
     at.toggle(key="cube_gath").set_value(False).run()
     assert not at.exception, [e.value for e in at.exception]
+    at.session_state["result_tab"] = "🎯 Gathering"  # lazy tabs: open the tab first
+    at.run()
     _bg(at, "encm_enc").set_value("2D").run()
     assert not at.exception, [e.value for e in at.exception]
 
@@ -113,3 +115,12 @@ def test_match_picker_switches_match():
     for mid in sb.options[:2]:
         at.sidebar.selectbox(key="match_as-pgs12gf").set_value(mid).run()
         assert not at.exception, [e.value for e in at.exception]
+
+
+def test_lazy_tabs_render_only_the_open_tab():
+    at = routed("views/algorithm.py")
+    n_first = len(at.get("plotly_chart"))
+    assert n_first == 1  # only tab ① builds its figure
+    at.session_state["algo_tab"] = "③ Crowd"
+    at.run()
+    assert not at.exception and len(at.get("plotly_chart")) == 3  # cube + 2 bar charts of tab ③ only

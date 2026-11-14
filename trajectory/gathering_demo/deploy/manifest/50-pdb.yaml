@@ -1,0 +1,11 @@
+# Keep at least 2 demo pods during voluntary disruptions (node drain, cluster upgrades).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gathering-demo
+  namespace: cs2207
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gathering-demo

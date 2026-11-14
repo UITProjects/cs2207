@@ -7,7 +7,19 @@ metadata:
     app.kubernetes.io/name: gathering-demo
     app.kubernetes.io/part-of: cs2207
 spec:
-  replicas: 1
+  # Demo sizing (load-tested): one Streamlit pod uses ≤ 1 core (single Python process) and needs ~1 CPU-second per
+  # visitor for the full flow, ~22 MiB per open session (≈150 MiB idle, 550 MiB peak with 25 sessions on one pod).
+  # 4 × 1 CPU absorbs 40–50 people opening the link at once (~12 per pod). Total: requests 2 CPU / 1 GiB,
+  # limits 4 CPU / 3 GiB (memory requests are small on purpose: the Ready workers are at 87–98 % requested).
+  # After the demo:
+  #   set replicas back to 1 here and push (Argo CD self-heals, so `kubectl scale` alone would be reverted)
+  replicas: 4
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: gathering-demo
@@ -17,6 +29,14 @@ spec:
         app.kubernetes.io/name: gathering-demo
         app.kubernetes.io/part-of: cs2207
     spec:
+      # spread the replicas over the Ready nodes so one node going NotReady keeps the demo up
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: gathering-demo
       # Only needed if the GHCR package stays private (see README.md):
       # imagePullSecrets:
       #   - name: ghcr-pull
@@ -53,11 +73,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
+              cpu: 500m
               memory: 256Mi
             limits:
               cpu: "1"
-              memory: 1Gi
+              memory: 768Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
