@@ -1,5 +1,9 @@
-# Public, behind CrowdSec (same as vaultwarden).
-# For LAN-only, use traefik-allow-local-ip-only@kubernetescrd instead of traefik-crowdsec@kubernetescrd.
+# Public route through the cluster's Traefik CrowdSec middleware.
+# To restrict access (e.g. internal network only), swap the router.middlewares annotation for another middleware.
+# Sticky routing: Traefik's Kubernetes Ingress provider reads session affinity from the backend Service
+# (20-service.yaml, traefik.ingress.kubernetes.io/service.sticky.cookie*), so both routes below are sticky.
+# Check after deploy: curl -sI https://<host>/trajectory/gathering/ | grep -i 'set-cookie: gathering_affinity'
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

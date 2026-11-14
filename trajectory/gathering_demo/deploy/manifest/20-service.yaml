@@ -5,6 +5,15 @@ metadata:
   namespace: cs2207
   labels:
     app.kubernetes.io/name: gathering-demo
+  annotations:
+    # Session affinity for Traefik (Kubernetes Ingress provider, v2/v3): Streamlit keeps each session in the pod
+    # that serves its websocket, so with several replicas every request and reconnect of a browser must reach the
+    # same pod. Traefik sets the cookie on the first response; the websocket upgrade carries it.
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: gathering_affinity
+    traefik.ingress.kubernetes.io/service.sticky.cookie.secure: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.httponly: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.samesite: lax
 spec:
   type: ClusterIP
   selector:

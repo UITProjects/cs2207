@@ -7,7 +7,18 @@ metadata:
     app.kubernetes.io/name: gathering-demo
     app.kubernetes.io/part-of: cs2207
 spec:
-  replicas: 1
+  # Sizing for a live demo with 40–50 concurrent visitors (load-tested, see README "Sizing"):
+  # a Streamlit pod is a single Python process (~1 core usable) and needs ~1 CPU-second per visitor for the full
+  # flow and ~22 MiB per open session (~150 MiB idle). Several replicas share the load; the Service pins each
+  # browser to one pod with a sticky cookie. Totals: requests 1 CPU / 1 GiB, limits 4 CPU / 2 GiB.
+  # After the event set replicas back to 1 here (Argo CD self-heals, so `kubectl scale` alone is reverted).
+  replicas: 4
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: gathering-demo
@@ -17,6 +28,14 @@ spec:
         app.kubernetes.io/name: gathering-demo
         app.kubernetes.io/part-of: cs2207
     spec:
+      # spread replicas across nodes so losing one node does not take the demo down
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: gathering-demo
       # Only needed if the GHCR package stays private (see README.md):
       # imagePullSecrets:
       #   - name: ghcr-pull
@@ -53,11 +72,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
+              cpu: 250m
               memory: 256Mi
             limits:
               cpu: "1"
-              memory: 1Gi
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

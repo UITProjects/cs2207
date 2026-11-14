@@ -1,0 +1,165 @@
+# Gathering patterns on PUBG trajectories (CS2207 · Nhóm 12)
+
+This demo mines **Crowd / Gathering patterns** (Zheng et al., *On Discovery of Gathering Patterns from Trajectories*, ICDE 2013) from PUBG squad matches on Erangel. It ships as a multipage **Streamlit** app (Vietnamese UI) that runs fully offline from the committed sample in `data/sample/`.
+
+The demo is for the final presentation, so it covers **trajectory mining only**. It ships **real PUBG tournament datasets** baked into the image (default: **PGS 12 Grand Final**) plus the mock match. There are **two pages** (`app/Home.py`, `st.navigation`), with the algorithm first and the result second. The sidebar picks the **dataset** and the **match**, and toggles **team/player names** (tournaments only: team tag such as `MiTH`, player such as `Baren`):
+
+1. **🔬 Thuật toán** (`app/views/algorithm.py`, opens first): the match step by step, with parameter sliders. It has a **3D x–y–t** view (default; like Fig. 1c of the paper and the old concert demo) or 2D, and trajectories coloured by team with a team filter and team-centre / per-player lines. The four tabs are:
+   1. ① trajectories;
+   2. ② snapshot cluster discs;
+   3. ③ crowds with dashed d_H links;
+   4. ④ TAD, with participators solid and passers-by dashed.
+2. **🎯 Kết quả** (`app/views/match.py`): a strip showing players → points → clusters → crowds → gatherings → teams involved, then two tabs:
+   - 🗺️ **Di chuyển**: squad-centre routes (● start, ■ end of trajectory), a replay with trails and follow camera, and the 3D x–y–t cube with gatherings as orange columns;
+   - 🎯 **Gathering**: a timeline of the mined gatherings, plus one gathering in 3D or 2D with members present and participators per team.
+
+The 3D views are drawn by `src/viz/cube.py`. There is no kill or ranking content: everything shown comes from positions (x, y, t) and the mined patterns.
+
+## Datasets (baked into the Docker image, no volume needed)
+
+| Dataset (`data/sample/<name>/`) | What | Matches |
+|---|---|---|
+| `as-pgs12gf` | **PGS 12 Grand Final** (30 Oct – 1 Nov 2026), 16 pro teams × 4 | 5 Erangel |
+| `sea-pacp26` | newest tournament with Erangel matches (13 Nov 2026) | 2 Erangel |
+| `sea-paci26` | second newest (12 Nov 2026) | 2 Erangel (an aborted 16 s remake was filtered out) |
+| `mock` | simulator, 25 squads, same JSON shapes as the API | 1 |
+
+How they were chosen (`scripts/fetch_datasets.py`, needs the key): PGS 12 Grand Final (pinned), then the 2 newest tournaments from `/tournaments` that have Erangel matches. If fewer qualify, the script falls back to the newest **ranked** public matches. Public "official" matches are mostly AI bots (38 humans / 105 characters in our probe), so they are not used. Each `dataset.json` holds the label, kind, `show_names` and the showcase match (the one with the best gathering coverage, ★ in the picker).
+
+Refresh: `uv run python scripts/fetch_datasets.py`, then `parse` / `clean` / `build_sample.py --dataset <name>` per dataset (below), then rebuild the image. The raw downloads in `data/raw/<name>/` (about 23 MB) are **committed**, so teammates can re-parse without a key. Mock raw data is regenerated, not committed. The image only copies the processed parquet in `data/sample/` (about 1.5 MB); `.dockerignore` excludes `data/raw`.
+
+The app is served under the path `/trajectory/gathering/`; the public host is configured in `deploy/manifest/40-ingress.yaml`. The previous concert demo lives in `legacy/`.
+
+## Install
+
+```bash
+cd trajectory/gathering_demo
+uv python install 3.11
+uv sync                         # runtime + dev deps (pytest, ruff, responses)
+uv run streamlit run app/Home.py
+```
+
+Without uv: `python3.11 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`.
+
+## Pipeline (same commands for every dataset)
+
+```bash
+DATASOURCE=mock uv run python -m src.ingest.crawl --max-matches 50     # data/raw/mock/{id}/ (idempotent)
+uv run python -m src.parse.telemetry --all --source mock               # data/interim/mock/{id}/*.parquet
+uv run python -m src.preprocess.clean --all --source mock              # data/processed/mock/{id}/*.parquet
+uv run python scripts/validate_mock.py                                 # recall vs ground truth (target ≥ 0.8)
+uv run python scripts/build_sample.py --n 30 --source mock             # data/sample/mock/ (or --match <id>)
+uv run streamlit run app/Home.py
+```
+
+The app reads `data/processed/{source}` when it exists and falls back to the committed `data/sample/{source}` otherwise. It never calls the API. With a single match, the sidebar shows no picker.
+
+A real tournament, end to end:
+
+```bash
+uv run python -m src.ingest.crawl --tournament as-pgs12gf --dataset as-pgs12gf --label "PGS 12 Grand Final" --max-matches 5
+uv run python -m src.parse.telemetry --all --dataset as-pgs12gf     # names kept: dataset.json show_names = true
+uv run python -m src.preprocess.clean --all --dataset as-pgs12gf
+uv run python scripts/build_sample.py --dataset as-pgs12gf          # → data/sample/as-pgs12gf/ (+ showcase)
+```
+
+The mock sample holds `mock-2207-0001` only; `data/raw/mock` keeps all 50 for regeneration (the crawl is deterministic).
+
+Other helper scripts:
+
+| Script | Purpose |
+|---|---|
+| `scripts/inspect_telemetry.py <telemetry.json.gz>` | event counts, actual keys per event, LogPlayerPosition Δt |
+| `scripts/stats.py` | points/match, Δt, clusters per t, crowds/gatherings per phase |
+| `scripts/plot_match.py <raw match dir>` | PNG of one raw match (+ mock ground truth) on the map |
+| `scripts/calibrate_places.py` | overlay of `assets/erangel_places.yaml` on the map |
+| `scripts/check_connectivity.py` | can this network reach the PUBG API and telemetry CDN? |
+| `scripts/pull_cloud_data.py` | download processed data from the GitHub Actions crawler |
+
+## Layout
+
+```
+config.yaml                 filters (Baltic_Main, squad/squad-fpp, official/competitive), Δt, default params, paths
+src/datasource/             DataSource protocol + factory, schema (pydantic), mock simulator, PUBG API source
+src/api/client.py           rate limiter (10 rpm on limited endpoints), 429 retry, NetworkBlockedError
+src/ingest/crawl.py         crawl CLI      src/parse/telemetry.py   raw → tables (cm→m, anonymised P001/T01)
+src/preprocess/clean.py     landing/death cut, outlier filter, Δt resampling (gaps ≤ 30 s), phases
+src/mining/                 snapshot (DBSCAN), hausdorff (+bbox lower bound), crowd (Alg. 1), gathering (TAD), pipeline
+src/analytics/              gazetteer (place names), movement (team tracks, routes)
+scripts/fetch_datasets.py   download the tournament datasets (PGS 12 GF + newest tournaments with Erangel)
+src/viz/map_plot.py         Plotly map (meters, reversed y), animations, hulls, zone circles
+src/viz/cube.py             3D space-time cube (x, y, t): textured map floor, disc meshes, team/algorithm cubes
+app/Home.py                 router: app/views/algorithm.py → app/views/match.py
+docs/schema.md              PUBG response shapes (verified on real files at M8)
+```
+
+## Tests
+
+```bash
+uv run ruff check .
+uv run pytest            # synthetic mining cases, parser contract (mock + tests/fixtures/real), API client (mocked HTTP), app smoke
+```
+
+## Real PUBG data
+
+1. Run `uv run python scripts/check_connectivity.py`. Some networks reset connections to PUBG domains. If it reports the network as blocked, use a VPN (e.g. Cloudflare WARP) or the cloud crawler below.
+2. Put `PUBG_API_KEY=...` in `trajectory/gathering_demo/.env` (gitignored; see `.env.example`). The key is read from the environment first, then from `.env`, and is never printed.
+3. Tournaments: `scripts/fetch_datasets.py` or `src.ingest.crawl --tournament <id>` (above). Public samples: `DATASOURCE=pubg uv run python -m src.ingest.crawl --max-matches 50` (it scans up to 400 sample ids per wanted match, because most samples are other maps/modes).
+4. Real-data findings (M8, details in `docs/schema.md`):
+   - positions every 10.00 s;
+   - tournament telemetry starts about 2 min before `LogMatchStart` (dropped);
+   - parachute landings can repeat (the first is kept);
+   - the white `poisonGasWarning` circle is the next zone and the blue `safetyZone` circle the current one;
+   - a final circle can split into disjoint groups at several steps, which gave 64 equivalent closed crowds. The pipeline collapses crowds with the same span and the same people (`variants` column).
+
+### Cloud crawler (GitHub Actions)
+
+`.github/workflows/pubg-crawl.yml` runs daily at 20:17 UTC and can also be started by hand. It crawls, then parses and cleans in the same job, and uploads `data/processed/` as an artifact kept for 90 days. It never commits to `main`.
+
+- Add the repository secret **`PUBG_API_KEY`** (Settings → Secrets and variables → Actions).
+- Start a run by hand from Actions → *pubg-crawl* → *Run workflow*.
+- Download the results locally with `uv run python scripts/pull_cloud_data.py` (needs the `gh` CLI, logged in).
+
+PUBG keeps match data for only 14 days, so leave the daily schedule on.
+
+## Deploy
+
+- `Dockerfile` (python:3.11-slim) copies `app/ src/ assets/ config.yaml data/sample/`, so every dataset is inside the image and no volume is needed. At build time it runs the synthetic mining tests and the parser contract (mock + real fixture), and checks that every baked dataset has a gathering. The container serves on 8501 with the source file watcher off (`--server.fileWatcherType=none`), which was about 70% of server CPU in a profile.
+- CI: `.github/workflows/gathering-demo.yml` builds a multi-arch image on pushes to `main`, then bumps the tag in `deploy/manifest/10-deployment.yaml`. Argo CD (`deploy/argo-app.yaml`) syncs it. The manifest sets `STREAMLIT_SERVER_BASE_URL_PATH=trajectory/gathering`.
+- Local: `docker build -t gathering-demo . && docker run -p 8501:8501 gathering-demo`.
+
+### Sizing for the live demo (40–50 people at once)
+
+Load-tested with real headless browsers against one container at the pod limits. Each session ran the algorithm page, then the result page, then the gathering tab:
+
+| Change | CPU per visitor (full flow) | 10 visitors at once on 1 CPU |
+|---|---|---|
+| before | ~3 s+ | 54 s each |
+| lazy tabs (only the open tab runs) + figures in `st.cache_resource` (no per-session unpickle, which re-validated every Plotly trace, about 0.3 s per figure) | 1.7 s | 35 s |
+| + file watcher off in the image | **1.05 s** | **26 s** |
+
+A warm page rerun is 0.08 s of CPU. A Streamlit pod is one Python process, so it uses at most about 1 core. Read-only data and figures are cached with `st.cache_resource` (one shared copy per pod). With `st.cache_data`, every session held its own copy, about 20 MiB each.
+
+The manifest runs **4 replicas × (request 250m CPU / 256 MiB, limit 1 CPU / 512 MiB)**, which totals **request 1 CPU / 1 GiB and limit 4 CPU / 2 GiB**, about 12 visitors per pod. One pod at these limits served 13 concurrent visitors, then 13 more who switched datasets, with 26 sessions alive at once: no errors, peak 384 MiB.
+
+The pods spread across nodes (`topologySpreadConstraints`). A PodDisruptionBudget keeps 2 pods up during node drains. **Traefik sticky cookies** (Service annotations) keep each browser on the pod that holds its Streamlit session.
+
+After the demo: set `replicas: 1` in `deploy/manifest/10-deployment.yaml` and push. Argo CD self-heals, so a plain `kubectl scale` would be reverted.
+- `requirements.txt` is generated with `uv export --no-dev --no-hashes --format requirements-txt` plus `pytest` (used for the build-time check).
+
+### Streamlit Community Cloud
+
+Point a new app at this repo with main file `trajectory/gathering_demo/app/Home.py` and Python 3.11. The app adds its project root to `sys.path` and reads `data/sample/`, so no secrets are needed. Copy the theme from `.streamlit/config.toml` into the app's settings if Cloud does not pick it up from the subfolder.
+
+## Data and trademarks
+
+The tournament data in `data/raw/` (raw API responses + telemetry) and `data/sample/` (processed) comes from the PUBG Developer API under the [PUBG API Terms](https://developer.pubg.com/tos). It is committed so teammates can re-parse and edit it without a key. It is part of this non-commercial course demo, not a stand-alone dataset, and it is not covered by the repo's license; see `data/raw/NOTICE.md`. The map image comes from [`pubg/api-assets`](https://github.com/pubg/api-assets) under the same terms.
+
+PUBG, PLAYERUNKNOWN'S BATTLEGROUNDS and all related logos are trademarks of PUBG Corporation or its affiliates. This project is not affiliated with or endorsed by PUBG Corporation or KRAFTON.
+
+## Limitations
+
+- Positions are sampled about every 10 s, so the data suits macro behaviour (gatherings, rotations), not gunfights.
+- Zones are random, so compare only within the same phase or zone conditions.
+- Results are correlations, not causation, and always come with *n*. Public ranked data is not the same as pro tournament data.
+- The mock simulator scripts hot-drop brawls, bridge camps and final-circle crowding. Its numbers show that the pipeline works; they say nothing about real PUBG behaviour.

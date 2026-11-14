@@ -1,0 +1,35 @@
+# Erangel (Baltic_Main, remastered) gazetteer — coordinates in METERS, origin top-left, y down.
+# Coordinates are ESTIMATES read off assets/maps/erangel.jpg (8160 m square); checked visually with
+# scripts/calibrate_places.py on 2026-11-13 (labels sit on the towns).
+# Calibrate by overlaying: `uv run python scripts/calibrate_places.py` -> PNG with labels.
+# kind: town | hot (hot drop) | bridge | landmark ; hot = landing weight in the mock simulator
+places:
+  - {name: Pochinki,       x: 3630, y: 4030, r: 300, kind: hot, hot: 1.0}
+  - {name: School,         x: 4190, y: 3310, r: 200, kind: hot, hot: 0.9}
+  - {name: Military Base,  x: 4500, y: 6480, r: 450, kind: hot, hot: 1.0}
+  - {name: Georgopol,      x: 1840, y: 2520, r: 450, kind: hot, hot: 0.7}
+  - {name: Rozhok,         x: 3990, y: 2850, r: 250, kind: hot, hot: 0.6}
+  - {name: Yasnaya Polyana, x: 5380, y: 2400, r: 400, kind: hot, hot: 0.6}
+  - {name: Mylta Power,    x: 7210, y: 4380, r: 300, kind: hot, hot: 0.5}
+  - {name: Novorepnoye,    x: 6100, y: 6100, r: 350, kind: hot, hot: 0.4}
+  - {name: Primorsk,       x: 1630, y: 6030, r: 300, kind: town, hot: 0.3}
+  - {name: Mylta,          x: 6140, y: 4660, r: 300, kind: town, hot: 0.3}
+  - {name: Severny,        x: 3790, y: 1200, r: 300, kind: town, hot: 0.3}
+  - {name: Zharki,         x: 1080, y: 1280, r: 250, kind: town, hot: 0.2}
+  - {name: Kameshki,       x: 6650, y: 1020, r: 250, kind: town, hot: 0.2}
+  - {name: Lipovka,        x: 7050, y: 3270, r: 300, kind: town, hot: 0.3}
+  - {name: Gatka,          x: 2150, y: 3850, r: 250, kind: town, hot: 0.3}
+  - {name: Stalber,        x: 5700, y: 1280, r: 250, kind: town, hot: 0.2}
+  - {name: Prison,         x: 6260, y: 3870, r: 200, kind: town, hot: 0.2}
+  - {name: Shelter,        x: 5680, y: 3900, r: 200, kind: town, hot: 0.2}
+  - {name: Mansion,        x: 6220, y: 3090, r: 200, kind: town, hot: 0.2}
+  - {name: Farm,           x: 5300, y: 4540, r: 250, kind: town, hot: 0.2}
+  - {name: Quarry,         x: 1750, y: 5420, r: 300, kind: town, hot: 0.2}
+  - {name: Hospital,       x: 1510, y: 3230, r: 200, kind: town, hot: 0.3}
+  - {name: Ruins,          x: 3150, y: 3350, r: 200, kind: town, hot: 0.2}
+  - {name: Boatyard,       x: 3510, y: 3150, r: 200, kind: town, hot: 0.2}
+  - {name: Ferry Pier,     x: 2830, y: 5740, r: 200, kind: town, hot: 0.2}
+  - {name: Shooting Range, x: 3420, y: 1820, r: 250, kind: town, hot: 0.2}
+  # Bridges to Sosnovka (Military Base) island: (x1,y1) mainland end -> (x2,y2) island end
+  - {name: West Bridge,    x: 3500, y: 5620, r: 250, kind: bridge, x1: 3310, y1: 5340, x2: 3750, y2: 5900}
+  - {name: East Bridge,    x: 5500, y: 5420, r: 250, kind: bridge, x1: 5500, y1: 5080, x2: 5510, y2: 5730}

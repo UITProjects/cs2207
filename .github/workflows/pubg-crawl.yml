@@ -1,0 +1,59 @@
+# Daily PUBG crawl in the cloud: independent of local network restrictions, and PUBG keeps match data only 14 days.
+# crawl → parse → clean in one job, then upload data/processed/ as an artifact. Never commits to main,
+# so it does not trigger the gathering-demo deploy workflow. Needs the repo secret PUBG_API_KEY.
+name: pubg-crawl
+
+on:
+  schedule:
+    - cron: "17 20 * * *"   # daily, 20:17 UTC
+  workflow_dispatch:
+    inputs:
+      max_matches:
+        description: "max matches to crawl"
+        default: "150"
+
+concurrency:
+  group: pubg-crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: trajectory/gathering_demo
+    env:
+      DATASOURCE: pubg
+      PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: uv sync --frozen --no-dev
+
+      - name: Check key
+        run: |
+          if [ -z "$PUBG_API_KEY" ]; then echo "::error::repository secret PUBG_API_KEY is not set"; exit 1; fi
+
+      - name: Crawl
+        run: uv run python -m src.ingest.crawl --days 1 --max-matches "${{ github.event.inputs.max_matches || '150' }}"
+
+      - name: Parse + clean
+        run: |
+          uv run python -m src.parse.telemetry --all --source pubg
+          uv run python -m src.preprocess.clean --all --source pubg
+
+      - name: Upload processed data
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubg-processed-${{ github.run_id }}
+          path: trajectory/gathering_demo/data/processed/pubg/
+          retention-days: 90
+          if-no-files-found: warn
