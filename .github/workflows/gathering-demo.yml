@@ -8,11 +8,6 @@ on:
     paths:
       - trajectory/gathering_demo/**
       - "!trajectory/gathering_demo/deploy/**"
-      - "!trajectory/gathering_demo/legacy/**"
-      - "!trajectory/gathering_demo/developmentNote/**"
-      - "!trajectory/gathering_demo/docs/**"
-      - "!trajectory/gathering_demo/scripts/**"
-      - "!trajectory/gathering_demo/data/raw/**"
       - "!**.md"
       - .github/workflows/gathering-demo.yml
   workflow_dispatch:
