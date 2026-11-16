@@ -92,24 +92,29 @@ def circle(c, pad=1.6):
     return cx, cy, r
 
 
+ALL_VIEW = dict(ts=list(range(T)), cl=set(), crowd=None, lines=True, noise=False)
+
+
+def cluster_visible(c, view):
+    """Cụm c có qua bộ lọc `view` không (mốc, cụm được chọn, crowd được chọn). Hình 3D và bảng cùng dùng."""
+    if c['t'] not in view['ts']:
+        return False
+    if view['cl'] and c['id'] not in view['cl']:
+        return False
+    return view['crowd'] is None or c['id'] in R['crowds'][view['crowd']]
+
+
 def fig3d(mode, focus=None, view=None):
     """mode: raw | clusters | crowds | participators (focus = index of a crowd).
     view: bộ lọc từ view_controls(): ts = các mốc hiện (list), cl = cụm được chọn (set id, rỗng = tất cả),
     crowd = chỉ crowd này (index, stage 2), lines = nối quỹ đạo, noise = hiện mờ điểm nhiễu (không thuộc cụm nào)."""
-    view = view or dict(ts=list(range(T)), cl=set(), crowd=None, lines=True, noise=False)
-    ts_vis, sel_cl, lines = view['ts'], view['cl'], view['lines']
+    view = view or ALL_VIEW
+    ts_vis, lines = view['ts'], view['lines']
     t_lo, t_hi, n_vis = ts_vis[0], ts_vis[-1], len(ts_vis)
     W, H = VENUE
     fig = go.Figure()
 
-    def cluster_shown(c):
-        if c['t'] not in ts_vis:
-            return False
-        if sel_cl and c['id'] not in sel_cl:
-            return False
-        return view['crowd'] is None or c['id'] in R['crowds'][view['crowd']]
-
-    shown_cl = [c for c in R['clusters'] if mode != 'raw' and cluster_shown(c)]
+    shown_cl = [c for c in R['clusters'] if mode != 'raw' and cluster_visible(c, view)]
     for t in ts_vis:
         z = t + 1
         fig.add_trace(go.Mesh3d(x=[0, W, W, 0], y=[0, 0, H, H], z=[z] * 4, i=[0, 0], j=[1, 2], k=[2, 3],
@@ -153,7 +158,7 @@ def fig3d(mode, focus=None, view=None):
             if not l['close']:
                 continue
             a, b = CL[l['a']], CL[l['b']]
-            if not (cluster_shown(a) and cluster_shown(b)):
+            if not (cluster_visible(a, view) and cluster_visible(b, view)):
                 continue
             k = crowd_of.get(l['a'])
             col = CROWD_COL[k % len(CROWD_COL)] if k is not None and crowd_of.get(l['b']) == k else CLUSTER_GRAY
@@ -219,7 +224,8 @@ def view_controls(mode):
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([1.7, 1.6, 1.7, 1.3], vertical_alignment='bottom')
         with c1:
-            m = st.segmented_control('Mốc thời gian', ['Tất cả', 'Một mốc', 'Khoảng'], default='Tất cả', key='v_mode') or 'Tất cả'
+            m = st.segmented_control('Mốc thời gian', ['Tất cả', 'Một mốc', 'Khoảng'], default='Tất cả', key='v_mode',
+                                     required=True)
         with c2:
             if m == 'Một mốc':
                 a = st.select_slider('Chọn mốc', labels, value=labels[0], key='v_one')
@@ -234,7 +240,10 @@ def view_controls(mode):
         with c3:
             if mode == 'clusters':
                 opts = {cN(c['id']): c['id'] for c in R['clusters'] if lo <= c['t'] <= hi}
-                pick = st.multiselect('Chỉ hiện cụm', list(opts), key=f'v_cl_{sig}_{lo}_{hi}', placeholder='Tất cả cụm')
+                key = f'v_cl_{sig}'
+                if key in st.session_state:   # đổi khoảng mốc: giữ cụm còn trong khoảng, bỏ cụm đã ra ngoài
+                    st.session_state[key] = [n for n in st.session_state[key] if n in opts]
+                pick = st.multiselect('Chỉ hiện cụm', list(opts), key=key, placeholder='Tất cả cụm')
                 view['cl'] = {opts[n] for n in pick}
             elif mode == 'crowds' and R['crowds']:
                 names = ['Tất cả crowd'] + [f'Cr{sub(k + 1)}' for k in range(len(R['crowds']))]
@@ -407,7 +416,7 @@ st.markdown('<div class="kicker">CS2207 · NHÓM 12 · DEMO GATHERING</div>', un
 st.title('Gathering: tìm nhóm tụ họp ở buổi hòa nhạc')
 
 STAGES = ['0 · Dữ liệu thô', '1 · Cụm theo mốc', '2 · Nối thành Crowd', '3 · Kiểm tra Gathering', '4 · Kết quả']
-stage = st.segmented_control('Bước', STAGES, default=STAGES[0], label_visibility='collapsed') or STAGES[0]
+stage = st.segmented_control('Bước', STAGES, default=STAGES[0], label_visibility='collapsed', required=True)
 s = STAGES.index(stage)
 st.markdown(chips(), unsafe_allow_html=True)
 
@@ -423,9 +432,10 @@ if s == 0:
     with left:
         st.plotly_chart(fig3d('raw', view=view), width='stretch', key='g3d', config=NOZOOM)
     with right:
-        df = pd.DataFrame([(o, tN(t), time_label(t), x, y) for o, t, x, y in R['rows']],
+        df = pd.DataFrame([(o, tN(t), time_label(t), x, y) for o, t, x, y in R['rows'] if t in view['ts']],
                           columns=['Người', 'Mốc', 'Giờ', 'x (m)', 'y (m)'])
-        st.markdown(f'**Dữ liệu thô** · {len(df)} điểm (người, mốc, x, y)')
+        n_all = len(R['rows'])
+        st.markdown(f"**Dữ liệu thô** · {len(df) if len(df) == n_all else f'{len(df)} / {n_all}'} điểm (người, mốc, x, y)")
         st.dataframe(df, hide_index=True, height=470, width='stretch')
         st.download_button('⬇ Tải CSV', df.to_csv(index=False).encode('utf-8-sig'), 'concert_points.csv', 'text/csv')
 
@@ -441,12 +451,15 @@ elif s == 1:
         st.plotly_chart(fig3d('clusters', view=view), width='stretch', key='g3d', config=NOZOOM)
     with right:
         rows = [{'Cụm': cN(c['id']), 'Mốc': tN(c['t']), 'Số người': f"{len(c['members'])} {'✓' if len(c['members']) >= P['m_c'] else '✗'}",
-                 'Thành viên': oset(c['members'])} for c in R['clusters']]
-        st.markdown(f"**{len(rows)} snapshot cluster** · ✓ = ≥ m<sub>c</sub> = {P['m_c']} người", unsafe_allow_html=True)
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
-        inc = {o for c in R['clusters'] for o in c['members']}
-        lone = sorted({o for o, *_ in R['rows'] if o not in inc}, key=lambda s_: int(s_[1:]))
-        st.caption(f"Không thuộc cụm nào ở mọi mốc (nhiễu): {oset(lone)}.")
+                 'Thành viên': oset(c['members'])} for c in R['clusters'] if cluster_visible(c, view)]
+        n_all = len(R['clusters'])
+        st.markdown(f"**{len(rows) if len(rows) == n_all else f'{len(rows)} / {n_all}'} snapshot cluster** · "
+                    f"✓ = ≥ m<sub>c</sub> = {P['m_c']} người", unsafe_allow_html=True)
+        st.dataframe(pd.DataFrame(rows, columns=['Cụm', 'Mốc', 'Số người', 'Thành viên']), hide_index=True, width='stretch')
+        inc = {o for c in R['clusters'] if c['t'] in view['ts'] for o in c['members']}
+        lone = sorted({o for o, t, *_ in R['rows'] if t in view['ts'] and o not in inc}, key=lambda s_: int(s_[1:]))
+        where = 'mọi mốc' if len(view['ts']) == T else 'mọi mốc đang xem'
+        st.caption(f"Không thuộc cụm nào ở {where} (nhiễu): {oset(lone)}.")
 
 elif s == 2:
     st.markdown(f'<div class="q">Nối cụm ở hai mốc <b>liền nhau</b> nếu khoảng cách Hausdorff '
@@ -459,23 +472,35 @@ elif s == 2:
         st.plotly_chart(fig3d('crowds', view=view), width='stretch', key='g3d', config=NOZOOM)
     with right:
         st.markdown('**Crowd tìm được**')
+        ts_vis = set(view['ts'])
+        vis_crowds = [k for k, cr in enumerate(R['crowds'])
+                      if (view['crowd'] is None or k == view['crowd']) and any(CL[i]['t'] in ts_vis for i in cr)]
         if not R['crowds']:
             st.warning('Không có crowd nào với tham số hiện tại.')
-        for k, cr in enumerate(R['crowds']):
+        elif not vis_crowds:
+            st.info('Không có crowd nào trong khoảng mốc đang xem.')
+        for k in vis_crowds:
+            cr = R['crowds'][k]
             col = CROWD_COL[k % len(CROWD_COL)]
             st.markdown(f'<span style="color:{col};font-weight:bold;font-size:17px">Cr{sub(k + 1)} = {seq(cr)}</span>'
                         f' · {tN(CL[cr[0]]["t"])} → {tN(CL[cr[-1]]["t"])} · {len(cr)} mốc', unsafe_allow_html=True)
         in_crowd = {i for cr in R['crowds'] for i in cr}
-        left_out = [c['id'] for c in R['clusters'] if c['id'] not in in_crowd]
+        left_out = [c['id'] for c in R['clusters'] if c['id'] not in in_crowd and c['t'] in ts_vis]
         if left_out:
             st.caption(f"Cụm không vào crowd nào: {', '.join(cN(i) for i in left_out)} "
                        f"(chuỗi nối được ngắn hơn k_c = {P['k_c']} mốc, hoặc cụm < m_c người).")
         show_all = st.toggle('Hiện mọi cặp (kể cả cặp không nối)', value=False)
+        sel = set(R['crowds'][view['crowd']]) if view['crowd'] is not None else None
+
+        def link_visible(l):   # cả hai đầu trong khoảng mốc; nếu chọn crowd thì ít nhất một đầu thuộc crowd đó
+            return (CL[l['a']]['t'] in ts_vis and CL[l['b']]['t'] in ts_vis
+                    and (sel is None or l['a'] in sel or l['b'] in sel))
         rows = [{'Cặp': f"{cN(l['a'])} → {cN(l['b'])}", 'Mốc': f"{tN(CL[l['a']]['t'])} → {tN(CL[l['b']]['t'])}",
                  'd_H (m)': round(l['dH'], 1), f'≤ δ = {P["delta"]:g}?': '✓ nối' if l['close'] else '✗'}
-                for l in R['links'] if show_all or l['close']]
+                for l in R['links'] if (show_all or l['close']) and link_visible(l)]
         st.markdown(f"**Hausdorff giữa các cụm ở hai mốc liền nhau** · {len(rows)} cặp")
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch', height=330)
+        st.dataframe(pd.DataFrame(rows, columns=['Cặp', 'Mốc', 'd_H (m)', f'≤ δ = {P["delta"]:g}?']),
+                     hide_index=True, width='stretch', height=330)
     st.markdown('<div class="verdict no">Crowd chỉ nói <b>"chỗ này luôn đông"</b>. Chưa biết có phải '
                 '<b>cùng những người đó</b> ở lại không ⇒ bước 3.</div>', unsafe_allow_html=True)
 
