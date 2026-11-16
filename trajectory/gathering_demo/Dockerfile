@@ -3,10 +3,13 @@
 # The base image and every pinned wheel exist for both architectures, so nothing compiles.
 FROM python:3.14-slim
 
+# MALLOC_ARENA_MAX: Streamlit runs one thread per session; capping glibc malloc arenas keeps RSS
+# near what Python really uses, well inside the pod's 1Gi limit.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 

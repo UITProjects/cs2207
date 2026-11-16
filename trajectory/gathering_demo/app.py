@@ -7,7 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from gathering_core import DEFAULTS, STEP_MIN, T, VENUE, ZONES, run, time_label
+from gathering_core import (DEFAULTS, STEP_MIN, T, VENUE, ZONES, discover_crowds, make_dataset, snapshot_clusters,
+                            tad, time_label)
 
 INK, BG, PAPER, LINE = '#172033', '#F5F2EA', '#FCFBF7', '#DDD6C6'
 RUST, BLUE, ORANGE, GRAY, MUTE, PEACH, ICE = '#B8541C', '#2D5F9A', '#E08A4F', '#6B7080', '#A3A9B6', '#F3D9C6', '#DCE6F2'
@@ -60,7 +61,36 @@ with st.sidebar:
     st.slider(':orange[$m_p$] · participator tối thiểu mỗi cụm', 1, 8, DEFAULTS['m_p'], key='m_p')
 
 P = {k: st.session_state[k] for k in KEYS}
-R = run(P)
+SIG = tuple(P[k] for k in KEYS)   # khóa cache: đổi tham số ⇒ id cụm, crowd, hình đều đổi
+
+# ----- cache trong bộ nhớ, dùng chung mọi phiên -----
+# Chia tầng để kéo một thanh trượt chỉ tính lại phần phụ thuộc vào nó. Không gian tham số rất lớn
+# (~2,4 triệu tổ hợp) nên mọi cache đều có max_entries + ttl: tổng < ~100 MB, an toàn với pod giới hạn 1 GiB.
+CACHE_TTL = 6 * 3600
+
+
+@st.cache_data(max_entries=64, ttl=CACHE_TTL, show_spinner=False)
+def cached_clusters(eps, min_pts):
+    return snapshot_clusters(make_dataset()[0], eps, min_pts)
+
+
+@st.cache_data(max_entries=128, ttl=CACHE_TTL, show_spinner=False)
+def cached_crowds(eps, min_pts, m_c, k_c, delta):
+    return discover_crowds(cached_clusters(eps, min_pts), m_c, k_c, delta)
+
+
+@st.cache_data(max_entries=256, ttl=CACHE_TTL, show_spinner=False)
+def cached_run(eps, min_pts, m_c, k_c, delta, k_p, m_p):
+    """Như gathering_core.run(), mỗi tầng lấy từ cache."""
+    rows, role = make_dataset()
+    clusters = cached_clusters(eps, min_pts)
+    crowds, links = cached_crowds(eps, min_pts, m_c, k_c, delta)
+    tads = [tad(cr, clusters, k_p, m_p, k_c) for cr in crowds]
+    params = dict(eps=eps, min_pts=min_pts, m_c=m_c, k_c=k_c, delta=delta, k_p=k_p, m_p=m_p)
+    return dict(params=params, rows=rows, role=role, clusters=clusters, links=links, crowds=crowds, tads=tads)
+
+
+R = cached_run(**P)
 CL = {c['id']: c for c in R['clusters']}
 POS = {(o, t): (x, y) for o, t, x, y in R['rows']}
 OBJS = sorted({o for o, *_ in R['rows']}, key=lambda s: int(s[1:]))
@@ -115,26 +145,37 @@ def fig3d(mode, focus=None, view=None):
     fig = go.Figure()
 
     shown_cl = [c for c in R['clusters'] if mode != 'raw' and cluster_visible(c, view)]
+    # Gộp mọi thứ cùng kiểu vào một trace (ngắt bằng None): ~10 trace thay vì ~200, trình duyệt vẽ WebGL nhẹ hơn nhiều.
+    # mặt phẳng các mốc đang hiện
+    px, py, pz, pi, pj, pk = [], [], [], [], [], []
+    ox, oy, oz = [], [], []
     for t in ts_vis:
-        z = t + 1
-        fig.add_trace(go.Mesh3d(x=[0, W, W, 0], y=[0, 0, H, H], z=[z] * 4, i=[0, 0], j=[1, 2], k=[2, 3],
-                                color='#CFC6B2', opacity=.16, hoverinfo='skip', showscale=False))
-        fig.add_trace(go.Scatter3d(x=[0, W, W, 0, 0], y=[0, 0, H, H, 0], z=[z] * 5, mode='lines',
-                                   line=dict(color='#9C9483', width=2), hoverinfo='skip', showlegend=False))
+        z, b = t + 1, len(px)
+        px += [0, W, W, 0]; py += [0, 0, H, H]; pz += [z] * 4
+        pi += [b, b]; pj += [b + 1, b + 2]; pk += [b + 2, b + 3]
+        ox += [0, W, W, 0, 0, None]; oy += [0, 0, H, H, 0, None]; oz += [z] * 5 + [None]
+    fig.add_trace(go.Mesh3d(x=px, y=py, z=pz, i=pi, j=pj, k=pk, color='#CFC6B2', opacity=.16, hoverinfo='skip', showscale=False))
+    fig.add_trace(go.Scatter3d(x=ox, y=oy, z=oz, mode='lines', line=dict(color='#9C9483', width=2), hoverinfo='skip', showlegend=False))
     # khu vực trên mặt phẳng thấp nhất đang hiện
+    zx, zy, tx, ty, tt = [], [], [], [], []
     for name, (x0, y0, x1, y1) in ZONES.items():
-        fig.add_trace(go.Scatter3d(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], z=[t_lo + 1] * 5, mode='lines',
-                                   line=dict(color=ORANGE, width=3), hoverinfo='skip', showlegend=False))
-        fig.add_trace(go.Scatter3d(x=[(x0 + x1) / 2], y=[y1 + 2.5], z=[t_lo + 1], mode='text', text=[name],
-                                   textfont=dict(color='#8A3F14', size=12), hoverinfo='skip', showlegend=False))
+        zx += [x0, x1, x1, x0, x0, None]; zy += [y0, y0, y1, y1, y0, None]
+        tx.append((x0 + x1) / 2); ty.append(y1 + 2.5); tt.append(name)
+    fig.add_trace(go.Scatter3d(x=zx, y=zy, z=[t_lo + 1 if v is not None else None for v in zx], mode='lines',
+                               line=dict(color=ORANGE, width=3), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter3d(x=tx, y=ty, z=[t_lo + 1] * len(tx), mode='text', text=tt,
+                               textfont=dict(color='#8A3F14', size=12), hoverinfo='skip', showlegend=False))
 
     par, members = set(), set()
     if mode == 'participators' and focus is not None and R['tads'][focus]['trace']:
         par = set(R['tads'][focus]['trace'][0]['par'])
         members = {o for i in R['crowds'][focus] for o in CL[i]['members']}
 
-    # cụm (hình elip xám như Fig. 1c)
-    if mode != 'raw':
+    # cụm (hình elip xám như Fig. 1c): một Mesh3d, màu theo từng mặt; nhãn: một trace chữ
+    if shown_cl:
+        mx, my, mz, mi, mj, mk, fc, hv = [], [], [], [], [], [], [], []
+        lx, ly, lz, lt, lc = [], [], [], [], []
+        a = [2 * math.pi * j / 36 for j in range(36)]
         for c in shown_cl:
             k = crowd_of.get(c['id'])
             col = CLUSTER_GRAY
@@ -143,17 +184,22 @@ def fig3d(mode, focus=None, view=None):
             if mode == 'participators' and k != focus:
                 col = '#C9C3B5'
             cx, cy, r = circle(c)
-            a = [2 * math.pi * j / 36 for j in range(36)]
-            xs, ys = [cx] + [cx + r * math.cos(v) for v in a], [cy] + [cy + r * math.sin(v) for v in a]
-            fig.add_trace(go.Mesh3d(x=xs, y=ys, z=[c['t'] + 1.002] * 37, i=[0] * 36, j=list(range(1, 37)),
-                                    k=[j % 36 + 1 for j in range(1, 37)], color=col, opacity=.42, showscale=False,
-                                    hovertext=f"{cN(c['id'])} · {tN(c['t'])} · {len(c['members'])} người: {oset(c['members'])}",
-                                    hoverinfo='text'))
-            fig.add_trace(go.Scatter3d(x=[cx - r - 2.2], y=[cy], z=[c['t'] + 1], mode='text', text=[f"<b>{cN(c['id'])}</b>"],
-                                       textfont=dict(color=INK if col != '#C9C3B5' else MUTE, size=14),
-                                       hoverinfo='skip', showlegend=False))
-    # nối cụm liền nhau có d_H ≤ δ
+            b = len(mx)
+            mx += [round(cx, 2)] + [round(cx + r * math.cos(v), 2) for v in a]   # 2 chữ số: bớt dung lượng gửi đi
+            my += [round(cy, 2)] + [round(cy + r * math.sin(v), 2) for v in a]
+            mz += [c['t'] + 1.002] * 37
+            mi += [b] * 36; mj += [b + j for j in range(1, 37)]; mk += [b + j % 36 + 1 for j in range(1, 37)]
+            fc += [col] * 36
+            hv += [f"{cN(c['id'])} · {tN(c['t'])} · {len(c['members'])} người: {oset(c['members'])}"] * 37
+            lx.append(cx - r - 2.2); ly.append(cy); lz.append(c['t'] + 1); lt.append(f"<b>{cN(c['id'])}</b>")
+            lc.append(INK if col != '#C9C3B5' else MUTE)
+        fig.add_trace(go.Mesh3d(x=mx, y=my, z=mz, i=mi, j=mj, k=mk, facecolor=fc, opacity=.42, showscale=False,
+                                hovertext=hv, hoverinfo='text'))
+        fig.add_trace(go.Scatter3d(x=lx, y=ly, z=lz, mode='text', text=lt, textfont=dict(color=lc, size=14),
+                                   hoverinfo='skip', showlegend=False))
+    # nối cụm liền nhau có d_H ≤ δ: một trace nét đứt cho mỗi màu
     if mode == 'crowds':
+        segs = {}
         for l in R['links']:
             if not l['close']:
                 continue
@@ -162,32 +208,40 @@ def fig3d(mode, focus=None, view=None):
                 continue
             k = crowd_of.get(l['a'])
             col = CROWD_COL[k % len(CROWD_COL)] if k is not None and crowd_of.get(l['b']) == k else CLUSTER_GRAY
-            fig.add_trace(go.Scatter3d(x=[a['centroid'][0], b['centroid'][0]], y=[a['centroid'][1], b['centroid'][1]],
-                                       z=[a['t'] + 1, b['t'] + 1], mode='lines', line=dict(color=col, width=7, dash='dash'),
-                                       hovertext=f"d_H({cN(l['a'])}, {cN(l['b'])}) = {l['dH']:.1f} m ≤ δ", hoverinfo='text',
-                                       showlegend=False))
-    # quỹ đạo từng người
+            sx, sy, sz, sh = segs.setdefault(col, ([], [], [], []))
+            h = f"d_H({cN(l['a'])}, {cN(l['b'])}) = {l['dH']:.1f} m ≤ δ"
+            sx += [a['centroid'][0], b['centroid'][0], None]; sy += [a['centroid'][1], b['centroid'][1], None]
+            sz += [a['t'] + 1, b['t'] + 1, None]; sh += [h, h, None]
+        for col, (sx, sy, sz, sh) in segs.items():
+            fig.add_trace(go.Scatter3d(x=sx, y=sy, z=sz, mode='lines', line=dict(color=col, width=7, dash='dash'),
+                                       hovertext=sh, hoverinfo='text', showlegend=False))
+    # quỹ đạo từng người: một trace cho mỗi kiểu nét (màu, độ dày)
     # bước 1–2: chỉ vẽ điểm (người, mốc) nằm trong các cụm đang hiện; điểm nhiễu chỉ hiện mờ khi bật công tắc
     cluster_mode = mode in ('clusters', 'crowds')
     shown_pts = {(o, c['t']) for c in shown_cl for o in c['members']} if cluster_mode else None
+    groups = {}
     for o in OBJS:
         ts = [t for t in ts_vis if (o, t) in POS]
         if shown_pts is not None:
             ts = [t for t in ts if (o, t) in shown_pts]
         if not ts:
             continue
-        line_col, dot, width = ('#8E94A3', '#5A6070', 2) if mode == 'raw' else ('#A9AEB8', '#7A808C', 2)
+        style = ('#8E94A3', '#5A6070', 2) if mode == 'raw' else ('#A9AEB8', '#7A808C', 2)
         if mode == 'participators':
             if o in par:
-                line_col, dot, width = ORANGE, ORANGE, 6
+                style = (ORANGE, ORANGE, 6)
             else:
-                line_col, dot, width = ('#8E94A3', '#8E94A3', 3) if o in members else ('#CFCAC0', '#B9B4AA', 2)
-        xs, ys, zs, hv = [], [], [], []
+                style = ('#8E94A3', '#8E94A3', 3) if o in members else ('#CFCAC0', '#B9B4AA', 2)
+        xs, ys, zs, hv = groups.setdefault(style, ([], [], [], []))
+        if xs:   # người khác: ngắt đường
+            xs.append(None); ys.append(None); zs.append(None); hv.append(None)
         for j, t in enumerate(ts):
             if j and t != ts[j - 1] + 1:   # mốc không liền nhau: ngắt đường, không nối xuyên qua mốc bị lọc
                 xs.append(None); ys.append(None); zs.append(None); hv.append(None)
             xs.append(POS[o, t][0]); ys.append(POS[o, t][1]); zs.append(t + 1)
             hv.append(f"{oN(o)} · {tN(t)} {time_label(t)} · ({POS[o, t][0]:.1f}, {POS[o, t][1]:.1f})")
+    # nhạt trước, đậm sau: participator cam vẽ đè lên trên
+    for (line_col, dot, width), (xs, ys, zs, hv) in sorted(groups.items(), key=lambda g: g[0][2]):
         fig.add_trace(go.Scatter3d(
             x=xs, y=ys, z=zs, mode='lines+markers' if lines else 'markers',
             line=dict(color=line_col, width=width), marker=dict(size=2.8, color=dot),
@@ -217,9 +271,21 @@ def fig3d(mode, focus=None, view=None):
     return fig
 
 
+@st.cache_data(max_entries=256, ttl=CACHE_TTL, show_spinner=False)
+def _fig3d_cached(sig, mode, focus, ts, cl, crowd, lines, noise):
+    return fig3d(mode, focus, dict(ts=list(ts), cl=set(cl), crowd=crowd, lines=lines, noise=noise))
+
+
+def show3d(mode, focus=None, view=None):
+    """Vẽ hình 3D, lấy từ cache theo (tham số, kiểu, crowd, bộ lọc)."""
+    v = view or ALL_VIEW
+    fig = _fig3d_cached(SIG, mode, focus, tuple(v['ts']), tuple(sorted(v['cl'])), v['crowd'], v['lines'], v['noise'])
+    st.plotly_chart(fig, width='stretch', key='g3d', config=NOZOOM)
+
+
 def view_controls(mode):
     """Bộ lọc cho hình 3D (một hàng phía trên hình): mốc thời gian, cụm / crowd, quỹ đạo. Trả về dict `view` cho fig3d."""
-    sig = '_'.join(str(P[k]) for k in KEYS)            # đổi tham số ⇒ id cụm đổi ⇒ lọc cũ không còn hợp lệ
+    sig = '_'.join(map(str, SIG))                      # đổi tham số ⇒ id cụm đổi ⇒ lọc cũ không còn hợp lệ
     labels = [f'{tN(t)} {time_label(t)}' for t in range(T)]
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([1.7, 1.6, 1.7, 1.3], vertical_alignment='bottom')
@@ -295,7 +361,8 @@ def direction(cr):
     return f'{za} → {zb}', moved
 
 
-def fig2d():
+@st.cache_data(max_entries=64, ttl=CACHE_TTL, show_spinner=False)
+def fig2d(sig):
     W, H = VENUE
     fig = go.Figure()
     fig.add_shape(type='rect', x0=0, y0=0, x1=W, y1=H, line=dict(color='#9C9483', width=2), fillcolor=PAPER, layer='below')
@@ -430,7 +497,7 @@ if s == 0:
     view = view_controls('raw')
     left, right = st.columns([1.5, 1])
     with left:
-        st.plotly_chart(fig3d('raw', view=view), width='stretch', key='g3d', config=NOZOOM)
+        show3d('raw', view=view)
     with right:
         df = pd.DataFrame([(o, tN(t), time_label(t), x, y) for o, t, x, y in R['rows'] if t in view['ts']],
                           columns=['Người', 'Mốc', 'Giờ', 'x (m)', 'y (m)'])
@@ -448,7 +515,7 @@ elif s == 1:
     view = view_controls('clusters')
     left, right = st.columns([1.5, 1])
     with left:
-        st.plotly_chart(fig3d('clusters', view=view), width='stretch', key='g3d', config=NOZOOM)
+        show3d('clusters', view=view)
     with right:
         rows = [{'Cụm': cN(c['id']), 'Mốc': tN(c['t']), 'Số người': f"{len(c['members'])} {'✓' if len(c['members']) >= P['m_c'] else '✗'}",
                  'Thành viên': oset(c['members'])} for c in R['clusters'] if cluster_visible(c, view)]
@@ -469,7 +536,7 @@ elif s == 2:
     view = view_controls('crowds')
     left, right = st.columns([1.5, 1])
     with left:
-        st.plotly_chart(fig3d('crowds', view=view), width='stretch', key='g3d', config=NOZOOM)
+        show3d('crowds', view=view)
     with right:
         st.markdown('**Crowd tìm được**')
         ts_vis = set(view['ts'])
@@ -521,7 +588,7 @@ elif s == 3:
         with left:
             st.markdown(tad_story(k), unsafe_allow_html=True)
         with right:
-            st.plotly_chart(fig3d('participators', k), width='stretch', key='g3d', config=NOZOOM)
+            show3d('participators', k)
             st.caption('Cam = participator của crowd đang chọn; xám = có mặt nhưng chưa đủ k_p cụm.')
 
 else:
@@ -544,7 +611,7 @@ else:
         st.table(df.style.apply(row_style, axis=1).hide(axis='index'))
     else:
         st.warning('Không có crowd nào với tham số hiện tại.')
-    st.plotly_chart(fig2d(), width='stretch', key='g2d', config=NOZOOM)
+    st.plotly_chart(fig2d(SIG), width='stretch', key='g2d', config=NOZOOM)
     st.caption('Mỗi crowd một màu. Hình tròn đặc + mũi tên liền dày = cụm thuộc gathering; vòng rỗng nét chấm + mũi tên nét đứt = cụm của crowd nhưng không thuộc gathering.')
     lines = []
     for k, (cr, td) in enumerate(zip(R['crowds'], R['tads'])):
